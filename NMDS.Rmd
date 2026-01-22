@@ -1,0 +1,414 @@
+---
+title: "NMDS"
+author: "GEgloff"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+NMDS plant genus data preparation
+```{r plant data NMDS prep, include = FALSE}
+
+plant_nmds_relab <- mappingdata[, which(names(mappingdata) == "achillea"):which(names(mappingdata) == "vicia")]
+
+# Add metadata
+plant_nmds_relab$site <- mappingdata$site
+plant_nmds_relab$visit <- mappingdata$visit
+plant_nmds_relab$plot <- mappingdata$plot
+
+# Replace NA values with 0
+plant_nmds_relab[is.na(plant_nmds_relab)] <- 0
+```
+
+```{r NMDS plant relative abundance per site and visit, include = FALSE}
+
+# Define species columns
+species_cols <- names(plant_nmds_relab)[which(names(plant_nmds_relab) == "achillea"):which(names(plant_nmds_relab) == "vicia")]
+
+# Replace NA with 0
+plant_nmds_relab[is.na(plant_nmds_relab)] <- 0
+
+# Get unique regions and visits
+regions <- unique(mappingdata$region)
+visits <- sort(unique(plant_nmds_relab$visit))
+
+# Initialize plot list
+nmds_plots <- list()
+
+# Loop over regions and visits
+for (r in regions) {
+  for (v in visits) {
+    subset_data <- mappingdata %>%
+      filter(region == r, visit == v)
+
+    species_data <- subset_data[, species_cols]
+    meta_data <- subset_data[, c("site", "plot")]
+
+    # Remove empty rows
+    valid_rows <- rowSums(species_data) > 0
+    species_data <- species_data[valid_rows, ]
+    meta_data <- meta_data[valid_rows, ]
+
+    if (nrow(species_data) < 3) next
+
+    species_data <- apply(species_data, 2, as.numeric)
+    set.seed(123)
+    nmds <- metaMDS(species_data, distance = "bray", k = 2, trymax = 100)
+
+    scores_df <- as.data.frame(scores(nmds, display = "sites"))
+    scores_df$site <- meta_data$site
+    scores_df$plot <- meta_data$plot
+    scores_df$region <- r
+    scores_df$visit <- v
+
+    p <- ggplot(scores_df, aes(x = NMDS1, y = NMDS2, color = site)) +
+      geom_point(size = 3) +
+      stat_ellipse(level = 0.95) +
+      theme_minimal() +
+      labs(
+        title = paste("NMDS -", r, "- Visit", v),
+        subtitle = paste("Stress:", round(nmds$stress, 3)),
+        x = "NMDS1",
+        y = "NMDS2"
+      ) +
+      scale_color_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
+      theme(plot.title = element_text(size = 14, face = "bold"))
+
+    nmds_plots[[paste0(r, "_Visit_", v)]] <- p
+  }
+}
+
+# Combine and display plots (adjust layout as needed)
+combined_plot <- wrap_plots(nmds_plots, ncol = 2)
+print(combined_plot)
+
+
+```
+
+
+``` {r plant data NMDS plot, include = FALSE}
+species_cols <- names(plant_nmds_relab)[which(names(plant_nmds_relab) == "achillea"):which(names(plant_nmds_relab) == "vicia")]
+
+nmds_plots <- list()
+adonis_results <- list()
+dispersion_tests <- list()
+
+for (v in 1:4) {
+  visit_data <- plant_nmds_relab[plant_nmds_relab$visit == v, ]
+  species_data <- visit_data[, species_cols]
+  meta_data <- visit_data[, c("site", "plot")]
+
+  valid_rows <- rowSums(species_data) > 0
+  species_data <- species_data[valid_rows, ]
+  meta_data <- meta_data[valid_rows, ]
+
+  if (nrow(species_data) < 3) next
+ 
+  species_data <- apply(species_data, 2, as.numeric)
+  set.seed(123)
+  nmds <- metaMDS(species_data, distance = "bray", k = 2, trymax = 100)
+
+  scores_df <- as.data.frame(scores(nmds, display = "sites"))
+  scores_df$site <- meta_data$site
+  scores_df$plot <- meta_data$plot
+  scores_df$visit <- v
+
+  p <- ggplot(scores_df, aes(x = NMDS1, y = NMDS2, color = site)) +
+    geom_point(size = 3) +
+    stat_ellipse(level = 0.95) +
+    theme_minimal() +
+    labs(
+      title = paste("NMDS of Plant Community - Visit", v),
+      subtitle = paste("Stress:", round(nmds$stress, 3)),
+      x = "NMDS1",
+      y = "NMDS2"
+    ) +
+    scale_color_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
+    theme(plot.title = element_text(size = 14, face = "bold"))
+
+  nmds_plots[[paste0("Visit_", v)]] <- p
+  adonis_results[[paste0("Visit_", v)]] <- adonis2(species_data ~ meta_data$site, method = "bray")
+  dispersion_tests[[paste0("Visit_", v)]] <- permutest(betadisper(vegdist(species_data, method = "bray"), meta_data$site))
+}
+
+```
+
+
+```{r, include = FALSE}
+for (v in 1:4) {
+  visit_data <- plant_nmds_relab[plant_nmds_relab$visit == v, ]
+  species_data <- visit_data[, species_cols]
+  meta_data <- visit_data[, c("site", "plot")]
+  
+  # Calculate valid rows first (rows where species sums > 0)
+  valid_rows <- rowSums(species_data) > 0
+  
+  # Subset species and meta data by valid rows
+  species_data <- species_data[valid_rows, ]
+  meta_data <- meta_data[valid_rows, ]
+  
+  # Now assign surveyID only for the valid rows
+  survey_ids <- mappingdata$surveyID[plant_nmds_relab$visit == v]
+  meta_data$surveyID <- survey_ids[valid_rows]
+  
+  if (nrow(species_data) < 3) next
+  
+  species_data <- apply(species_data, 2, as.numeric)
+  set.seed(123)
+  nmds <- metaMDS(species_data, distance = "bray", k = 2, trymax = 100)
+  
+  scores_df <- as.data.frame(scores(nmds, display = "sites"))
+  scores_df$site <- meta_data$site
+  scores_df$plot <- meta_data$plot
+  scores_df$visit <- v
+  scores_df$surveyID <- meta_data$surveyID
+  
+  p <- ggplot(scores_df, aes(x = NMDS1, y = NMDS2, color = site)) +
+    geom_point(size = 3) +
+    geom_text(aes(label = surveyID), vjust = -0.8, size = 2) +
+    stat_ellipse(level = 0.95) +
+    theme_minimal() +
+    labs(
+      title = paste("NMDS of Plant Community - Visit", v),
+      subtitle = paste("Stress:", round(nmds$stress, 3)),
+      x = "NMDS1",
+      y = "NMDS2"
+    ) +
+    scale_color_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
+    theme(plot.title = element_text(size = 14, face = "bold"))
+  
+  nmds_plots[[paste0("Visit_", v)]] <- p
+  adonis_results[[paste0("Visit_", v)]] <- adonis2(species_data ~ meta_data$site, method = "bray")
+  dispersion_tests[[paste0("Visit_", v)]] <- permutest(betadisper(vegdist(species_data, method = "bray"), meta_data$site))
+}
+
+```
+
+
+```{r plot NMDS plant genus, include = FALSE}
+# Combine the plots in a 2x2 grid
+combined_plot <- (nmds_plots[["Visit_1"]] | nmds_plots[["Visit_2"]]) /
+                 (nmds_plots[["Visit_3"]] | nmds_plots[["Visit_4"]])
+
+# Print the combined plot
+print(combined_plot)
+
+# Print PERMANOVA (adonis2) and PERMDISP results for all visits
+for (v in 1:4) {
+  cat("\n---\n")
+  cat(paste0("### Visit ", v, "\n\n"))
+  
+  cat("PERMANOVA (adonis2):\n")
+  print(adonis_results[[paste0("Visit_", v)]])
+  
+  cat("\nPERMDISP (homogeneity of dispersion):\n")
+  print(dispersion_tests[[paste0("Visit_", v)]])
+}
+
+```
+
+remove outliers
+```{r, include = FALSE}
+# Initialize list to store cleaned plots and results
+nmds_plots_clean <- list()
+adonis_results_clean <- list()
+dispersion_tests_clean <- list()
+
+for (v in 1:4) {
+  visit_data <- plant_nmds_relab[plant_nmds_relab$visit == v, ]
+  species_data <- visit_data[, species_cols]
+  meta_data <- visit_data[, c("site", "plot")]
+  
+  valid_rows <- rowSums(species_data) > 0
+  species_data <- species_data[valid_rows, ]
+  meta_data <- meta_data[valid_rows, ]
+  
+  survey_ids <- mappingdata$surveyID[plant_nmds_relab$visit == v]
+  meta_data$surveyID <- survey_ids[valid_rows]
+  
+  if (nrow(species_data) < 3) next
+  
+  species_data <- apply(species_data, 2, as.numeric)
+  
+  set.seed(123)
+  # Run initial NMDS on all valid rows
+  nmds_full <- metaMDS(species_data, distance = "bray", k = 2, trymax = 100)
+  
+  scores_full <- as.data.frame(scores(nmds_full, display = "sites"))
+  
+  # Calculate centroid and distance from centroid
+  centroid <- colMeans(scores_full)
+  scores_full$dist_from_centroid <- sqrt((scores_full$NMDS1 - centroid[1])^2 + (scores_full$NMDS2 - centroid[2])^2)
+  
+  # Define outlier threshold (mean + 2 SD)
+  threshold <- mean(scores_full$dist_from_centroid) + 2 * sd(scores_full$dist_from_centroid)
+  
+  # Filter to remove outliers
+  non_outliers <- scores_full$dist_from_centroid <= threshold
+  
+  species_data_no_out <- species_data[non_outliers, ]
+  meta_data_no_out <- meta_data[non_outliers, ]
+  
+  # Re-run NMDS without outliers
+  nmds_clean <- metaMDS(species_data_no_out, distance = "bray", k = 2, trymax = 100)
+  scores_clean <- as.data.frame(scores(nmds_clean, display = "sites"))
+  
+  scores_clean$site <- meta_data_no_out$site
+  scores_clean$plot <- meta_data_no_out$plot
+  scores_clean$visit <- v
+  scores_clean$surveyID <- meta_data_no_out$surveyID
+  
+  p_clean <- ggplot(scores_clean, aes(x = NMDS1, y = NMDS2, color = site)) +
+    geom_point(size = 3) +
+    geom_text(aes(label = surveyID), vjust = -0.8, size = 2) +
+    stat_ellipse(level = 0.95) +
+    theme_minimal() +
+    labs(
+      title = paste("NMDS of Plant Community - Visit", v, "(Outliers removed)"),
+      subtitle = paste("Stress:", round(nmds_clean$stress, 3)),
+      x = "NMDS1",
+      y = "NMDS2"
+    ) +
+    scale_color_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
+    theme(plot.title = element_text(size = 14, face = "bold"))
+  
+  nmds_plots_clean[[paste0("Visit_", v)]] <- p_clean
+  adonis_results_clean[[paste0("Visit_", v)]] <- adonis2(species_data_no_out ~ meta_data_no_out$site, method = "bray")
+  dispersion_tests_clean[[paste0("Visit_", v)]] <- permutest(betadisper(vegdist(species_data_no_out, method = "bray"), meta_data_no_out$site))
+}
+
+# Combine the cleaned plots in a 2x2 grid
+combined_plot_clean <- (nmds_plots_clean[["Visit_1"]] | nmds_plots_clean[["Visit_2"]]) /
+                       (nmds_plots_clean[["Visit_3"]] | nmds_plots_clean[["Visit_4"]])
+
+# Print the combined cleaned plot
+print(combined_plot_clean)
+
+# Print PERMANOVA and PERMDISP results for all visits (cleaned)
+for (v in 1:4) {
+  cat("\n---\n")
+  cat(paste0("### Visit ", v, " (Outliers removed)\n\n"))
+  
+  cat("PERMANOVA (adonis2):\n")
+  print(adonis_results_clean[[paste0("Visit_", v)]])
+  
+  cat("\nPERMDISP (homogeneity of dispersion):\n")
+  print(dispersion_tests_clean[[paste0("Visit_", v)]])
+}
+```
+```{r plant NMDS by region and visit, include = FALSE}
+plant_nmds_relab$region <- mappingdata$region
+plant_nmds_relab$site <- mappingdata$site
+plant_nmds_relab$plot <- mappingdata$plot
+plant_nmds_relab$visit <- mappingdata$visit
+plant_nmds_relab$surveyID <- mappingdata$surveyID
+# Define species columns
+species_cols <- names(plant_nmds_relab)[which(names(plant_nmds_relab) == "achillea"):which(names(plant_nmds_relab) == "vicia")]
+
+
+# Initialize result containers
+nmds_plots_region <- list()
+adonis_results_region <- list()
+dispersion_tests_region <- list()
+
+regions <- c("Aire", "Scheulte", "Thiele", "Schwarzbach")
+
+for (reg in regions) {
+  for (v in 1:4) {
+    
+    visit_data <- plant_nmds_relab[plant_nmds_relab$visit == v & plant_nmds_relab$region == reg, ]
+    if (nrow(visit_data) < 3) next
+    
+    species_data <- visit_data[, species_cols]
+    meta_data <- visit_data[, c("region", "site", "plot")]
+    
+    # Filter valid rows
+    valid_rows <- rowSums(species_data) > 0
+    species_data <- species_data[valid_rows, ]
+    meta_data <- meta_data[valid_rows, ]
+    
+    # Add surveyID
+    survey_ids <- mappingdata$surveyID[mappingdata$visit == v & mappingdata$region == reg]
+    meta_data$surveyID <- survey_ids[valid_rows]
+    
+    if (nrow(species_data) < 3) next
+    
+    species_data <- apply(species_data, 2, as.numeric)
+    
+    set.seed(123)
+    nmds <- metaMDS(species_data, distance = "bray", k = 2, trymax = 100)
+    
+    scores_df <- as.data.frame(scores(nmds, display = "sites"))
+    scores_df$site <- meta_data$site
+    scores_df$plot <- meta_data$plot
+    scores_df$visit <- v
+    scores_df$region <- reg
+    scores_df$surveyID <- meta_data$surveyID
+    
+    p <- ggplot(scores_df, aes(x = NMDS1, y = NMDS2, color = site)) +
+      geom_point(size = 3) +
+      geom_text(aes(label = surveyID), vjust = -0.8, size = 2) +
+      stat_ellipse(level = 0.95) +
+      theme_minimal() +
+      labs(
+        title = paste("NMDS -", reg, "- Visit", v),
+        subtitle = paste("Stress:", round(nmds$stress, 3)),
+        x = "NMDS1",
+        y = "NMDS2"
+      ) +
+      scale_color_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
+      theme(plot.title = element_text(size = 14, face = "bold"))
+    
+    plot_key <- paste0("Region_", reg, "_Visit_", v)
+    nmds_plots_region[[plot_key]] <- p
+    
+    adonis_results_region[[plot_key]] <- adonis2(species_data ~ meta_data$site, method = "bray")
+    dispersion_tests_region[[plot_key]] <- permutest(betadisper(vegdist(species_data, method = "bray"), meta_data$site))
+  }
+}
+
+table_rows <- expand.grid(region = c("Aire", "Scheulte", "Thiele", "Schwarzbach"), visit = 1:4)
+
+for (i in 1:nrow(table_rows)) {
+  reg <- table_rows$region[i]
+  v <- table_rows$visit[i]
+  
+  visit_data <- plant_nmds_relab[plant_nmds_relab$region == reg & plant_nmds_relab$visit == v, ]
+  species_data <- visit_data[, species_cols]
+  valid_rows <- rowSums(species_data) > 0
+  
+  cat(paste0("Region: ", reg, ", Visit: ", v, " — Valid plots: ", sum(valid_rows), "\n"))
+}
+
+# Combine and show plots per region
+for (reg in regions) {
+  plot_list <- list()
+  for (v in 1:4) {
+    key <- paste0("Region_", reg, "_Visit_", v)
+    plot_list[[v]] <- nmds_plots_region[[key]]
+  }
+  # Only combine if at least some plots exist
+  if (any(!sapply(plot_list, is.null))) {
+    combined <- (plot_list[[1]] | plot_list[[2]]) / (plot_list[[3]] | plot_list[[4]])
+    print(combined)
+  }
+}
+
+# Print results per region/visit
+for (key in names(adonis_results_region)) {
+  cat("\n---\n")
+  cat(paste0("### ", key, "\n\n"))
+  
+  cat("PERMANOVA (adonis2):\n")
+  print(adonis_results_region[[key]])
+  
+  cat("\nPERMDISP (homogeneity of dispersion):\n")
+  print(dispersion_tests_region[[key]])
+}
+```

@@ -1,0 +1,352 @@
+---
+title: "brms_bee"
+author: "GEgloff"
+date: "`r Sys.Date()`"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Introduction into using brms:
+https://ourcodingclub.github.io/tutorials/brms/#part1
+
+
+Based on methodology provided by Gabriel Marcacci: 
+```{r}
+library(brms)
+library(ggeffects)
+library(ggplot2)
+library(loo)
+library(rstanarm)
+```
+
+```{r}
+data_all_scaled <- readRDS("data_all_scaled.rds")
+```
+
+```{r base model}
+# BM <- brm(bee_abundance ~ site + (1|region/site/plotID),
+#                          data = data_all_scaled, family = negbinomial(), chains = 3,
+#                          iter = 3000, warmup = 1000)
+# 
+# saveRDS(BM, file = "BM_model.rds")
+```
+```{r}
+BM <- readRDS("BM_model.rds")
+
+summary(BM)                     # look at Rhat and Bulk/Tail ESS
+mcmc_plot(BM, type = "rhat")    # all ~ 1.00
+mcmc_plot(BM, type = "neff")    # adequate effective sample sizes
+summary(BM)
+plot(BM)
+```
+
+```{r mulitvariate model}
+
+# MM <- brm(bee_abundance ~ site + hill_q1 + hill_q2 + sloped + sand + patchiness_fac + (1 | region/site/plotID), 
+#            data = data_all_scaled, family = negbinomial(), chains = 3, iter = 7000, warmup = 2000)
+# 
+# saveRDS(MM, file = "MM_model.rds")
+```
+```{r}
+MM <- readRDS("MM_model.rds")
+
+summary(MM)
+plot(MM)
+
+```
+```{r}
+start.time <- Sys.time()
+# MM2 <- brm(bee_abundance ~ site + hill_q1 + hill_q2 + sloped + sand + patchiness_fac + (1 | region/site/plotID), 
+#            data = data_all_scaled, family = negbinomial(), chains = 4, iter = 10000, warmup = 5000)
+# 
+# saveRDS(MM2, file = "MM2_model.rds")
+
+(run.time <- Sys.time() - start.time)
+
+```
+```{r}
+MM2 <- readRDS("MM2_model.rds")
+
+summary(MM2)                 # Rhat < 1.01, bulk/tail ESS high
+plot(MM2)                    # trace plots and densities
+pp_check(MM2)                # overall distribution
+pp_check(MM2, type = "bars") # counts & zeros
+pp_check(MM2, type = "rootogram")
+pp_check(MM2, ndraws = 100)
+
+loo_MM2 <- loo(MM2)          # out-of-sample predictive ability
+
+```
+```{r}
+# This creates curves of predicted mean abundance across Hill q1,
+# split by site (focal vs control), holding other predictors at typical values.
+ce <- conditional_effects(
+  MM2,
+  effects = "hill_q1:site",  # interaction-style display
+  prob = 0.95
+)
+
+p_ce <- plot(ce)[[1]] +
+  labs(
+    x = "Hill q1 (standardized)",
+    y = "Predicted bee abundance (mean)",
+    title = "Predicted bee abundance vs Hill q1 by site"
+  ) +
+  theme_minimal(base_size = 12)
+
+print(p_ce)
+```
+
+
+```{r}
+#try with different covariates
+start.time <- Sys.time()
+# MM3 <- brm(bee_abundance ~ site + bareground + hill_q1 + hill_q2 + herb + sand + sloped + steep + patchiness_fac + (1 | region/site/plotID), 
+#            data = data_all_scaled, family = negbinomial(), chains = 4, iter = 10000, warmup = 5000)
+# 
+# saveRDS(MM3, file = "MM3_model.rds")
+
+(run.time <- Sys.time() - start.time)
+```
+```{r}
+MM3 <- readRDS("MM3_model.rds")
+
+summary(MM3)                 # Rhat < 1.01, bulk/tail ESS high
+plot(MM3)                    # trace plots and densities
+pp_check(MM3)                # overall distribution
+pp_check(MM3, type = "bars") # counts & zeros
+pp_check(MM3, type = "rootogram")
+
+loo_MM3 <- loo(MM3)          # out-of-sample predictive ability
+
+```
+“We compared two hierarchical negative binomial models via PSIS‑LOO. The lean model (fewer predictors) had elpd_loo = −743.6 (SE 20.4) and looic = 1487.2 (SE 40.7), versus −745.5 (SE 20.5) and 1491.0 (SE 40.9) for the larger model. The effective number of parameters was lower for the lean model (p_loo ≈ 19.4 vs. 21.3), and all Pareto‑k diagnostics were below 0.7. Differences in elpd_loo were small relative to their uncertainty, indicating similar predictive performance; we therefore selected the leaner model for parsimony.”
+
+
+```{r}
+#try with different covariates
+start.time <- Sys.time()
+MM4 <- brm(bee_abundance ~ site + bareground + hill_q1 + hill_q2 + herb + sand + soil + sloped + steep + patchiness_ord + vegheight + visit_ord +
+             (1|region) + (1|plotID),
+           data = data_all_scaled, family = negbinomial(), chains = 4, iter = 10000, warmup = 5000)
+
+saveRDS(MM4, file = "MM4_model.rds")
+
+(run.time <- Sys.time() - start.time)
+```
+```{r}
+MM4 <- readRDS("MM4_model.rds")
+
+summary(MM4)                 # Rhat < 1.01, bulk/tail ESS high
+plot(MM4)                    # trace plots and densities
+pp_check(MM4)                # overall distribution
+pp_check(MM4, type = "bars", draws = 200) # counts & zeros
+pp_check(MM4, type = "rootogram")
+
+loo_MM4 <- loo(MM4)          # out-of-sample predictive ability
+
+```
+```{r}
+# Set up colors for sites
+site_cols <- c(
+  "focal" = "#6B7C93",
+  "control"   = "#D08C60"
+)
+
+
+base_theme <- theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.minor = element_blank(),
+    legend.title = element_blank()
+  )
+
+## ============================
+## 1️⃣ SITE EFFECT
+## ============================
+pred_site <- ggpredict(MM4, terms = "site")
+
+p_site <- ggplot() +
+  geom_jitter(
+    data = data_all_scaled,
+    aes(x = site, y = bee_abundance, color = site),
+    width = 0.1, alpha = 0.25, size = 1.8
+  ) +
+  geom_point(
+    data = pred_site,
+    aes(x = x, y = predicted, color = x),
+    size = 3
+  ) +
+  geom_errorbar(
+    data = pred_site,
+    aes(x = x, ymin = conf.low, ymax = conf.high, color = x),
+    width = 0.1
+  ) +
+  scale_color_manual(values = site_cols) +
+  labs(
+    x = "Site",
+    y = "Bee abundance",
+    title = "Effect of site on bee abundance"
+  ) +
+  base_theme +
+  theme(legend.position = "none")
+
+## ============================
+## 2️⃣ PATCHINESS (ORDINAL)
+## ============================
+pred_patch <- ggpredict(MM4, terms = "patchiness_ord")
+
+p_patch <- ggplot() +
+  geom_jitter(
+    data = data_all_scaled,
+    aes(x = patchiness_ord, y = bee_abundance),
+    width = 0.15, alpha = 0.2, size = 1.6, color = "grey40"
+  ) +
+  geom_line(
+    data = pred_patch,
+    aes(x = x, y = predicted, group = 1),
+    size = 1.2, color = "#2F3E46"
+  ) +
+  geom_ribbon(
+    data = pred_patch,
+    aes(x = x, ymin = conf.low, ymax = conf.high),
+    alpha = 0.2, fill = "#84A59D"
+  ) +
+  labs(
+    x = "Patchiness (ordinal)",
+    y = "Bee abundance",
+    title = "Effect of habitat patchiness on bee abundance"
+  ) +
+  base_theme
+
+## ============================
+## 3️⃣ HILL DIVERSITY (q = 1)
+## ============================
+pred_hill1 <- ggpredict(MM4, terms = "hill_q1 [all]")
+
+p_hill1 <- ggplot() +
+  geom_jitter(
+    data = data_all_scaled,
+    aes(x = hill_q1, y = bee_abundance),
+    width = 0, alpha = 0.2, size = 1.6, color = "grey40"
+  ) +
+  geom_line(
+    data = pred_hill1,
+    aes(x = x, y = predicted),
+    size = 1.2, color = "#3A5A40"
+  ) +
+  geom_ribbon(
+    data = pred_hill1,
+    aes(x = x, ymin = conf.low, ymax = conf.high),
+    alpha = 0.2, fill = "#A3B18A"
+  ) +
+  labs(
+    x = "Hill diversity (q = 1)",
+    y = "Bee abundance",
+    title = "Effect of plant Hill q1 diversity on bee abundance"
+  ) +
+  base_theme
+
+## ============================
+## 4️⃣ SOIL COVER
+## ============================
+pred_soil <- ggpredict(MM4, terms = "soil [all]")
+
+p_soil <- ggplot() +
+  geom_jitter(
+    data = data_all_scaled,
+    aes(x = soil, y = bee_abundance),
+    width = 0, alpha = 0.2, size = 1.6, color = "grey40"
+  ) +
+  geom_line(
+    data = pred_soil,
+    aes(x = x, y = predicted),
+    size = 1.2, color = "#6D4C41"
+  ) +
+  geom_ribbon(
+    data = pred_soil,
+    aes(x = x, ymin = conf.low, ymax = conf.high),
+    alpha = 0.2, fill = "#D7CCC8"
+  ) +
+  labs(
+    x = "Soil cover",
+    y = "Bee abundance",
+    title = "Effect of soil cover on bee abundance"
+  ) +
+  base_theme
+
+## ============================
+## 5️⃣ VISIT (ORDINAL / SEASON)
+## ============================
+pred_visit <- ggpredict(MM4, terms = "visit_ord")
+
+p_visit <- ggplot() +
+  geom_jitter(
+    data = data_all_scaled,
+    aes(x = visit_ord, y = bee_abundance),
+    width = 0.15, alpha = 0.25, size = 1.6, color = "grey40"
+  ) +
+  geom_line(
+    data = pred_visit,
+    aes(x = x, y = predicted, group = 1),
+    size = 1.2, color = "#5E548E"
+  ) +
+  geom_ribbon(
+    data = pred_visit,
+    aes(x = x, ymin = conf.low, ymax = conf.high),
+    alpha = 0.2, fill = "#CDB4DB"
+  ) +
+  labs(
+    x = "Visit (ordinal)",
+    y = "Bee abundance",
+    title = "Seasonal trend in bee abundance"
+  ) +
+  base_theme
+
+## ============================
+## DISPLAY PLOTS
+## ============================
+p_site
+p_patch
+p_hill1
+p_soil
+p_visit
+```
+
+
+
+
+```{r mulitvariate model using stan_glmer 2}
+
+# # Same formula structure as in lme4/brms
+# fit_rs <- stan_glmer(
+#   bee_abundance ~ site + hill_q1 + hill_q2 + sloped + sand + patchiness_fac +
+#     (1 | region/site/plotID),
+#   data = data_all_scaled,
+#   family = neg_binomial_2(link = "log"),   # ~ nbinom2 variance: Var = mu + mu^2 / phi
+#   chains = 4, iter = 6000, warmup = 2000, seed = 123,
+#   # Defaults in rstanarm are weakly-informative; you can also set custom priors (next section)
+#   cores = parallel::detectCores()
+# )
+# 
+# # Save model
+# saveRDS(fit_rs, "MM_model_rstanarm.rds")
+```
+
+```{r}
+# Summary & diagnostics
+
+fit_rs <- readRDS("MM_model_rstanarm.rds")
+
+print(summary(fit_rs), digits = 2)
+summary(fit_rs)
+pp_check(fit_rs, plotfun = "dens_overlay")  # posterior predictive check (overall)
+pp_check(fit_rs, plotfun = "error_binned")  # dispersion check
+
+draws <- as.array(fit_rs)
+bayesplot::mcmc_trace(draws, pars = c("hill_q1", "hill_q2", "sand"))
+```
+
+
