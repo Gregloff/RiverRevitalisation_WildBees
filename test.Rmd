@@ -12,9 +12,6 @@ knitr::opts_chunk$set(echo = TRUE)
 
 load packages
 ```{r load packages, results = 'hide'}
-library(bayesplot)
-library(brms)
-library(broom.mixed)
 library(car)
 library(DHARMa) #simulateresiduals
 library(dplyr)
@@ -22,7 +19,6 @@ library(ggplot2)
 library(ggeffects)
 library(glmmTMB)
 library(lme4)
-library(loo)
 library(patchwork) #plotting
 library(posterior)
 library(purrr)
@@ -84,7 +80,8 @@ columns_plot <- c("plotID", "plot", "site", "region", "Xcoord", "Ycoord",
 
 habplot_data <- mapp_data[, columns_plot]
 
-# Subset the data frame to include site scale mapping data (including site scale plant data)
+# Subset the data frame to include site scale mapping data 
+# (including site scale plant data)
 columns_site <- c("plotID", "plot", "site", "region", "Xcoord", "Ycoord",
                   "Zcoord", "canton", "date", "visit", "surveyID", "observer",
                   "municipality", "sitebareground", "sitevegcover",
@@ -102,7 +99,7 @@ columns_site <- c("plotID", "plot", "site", "region", "Xcoord", "Ycoord",
 habsite_data <- mapp_data[, columns_site]
 
 
-# calculate proportion of each bareground variable to full plot area (until now these sum to 100% within the % of bareground)
+# calculate proportion of each bareground variable to full plot area
 cols <- c("sand", "gravel", "cobble", "stone", "wood", "soil")
 mapp_data[cols] <- mapp_data[cols] * mapp_data$bareground / 100
 ```
@@ -110,19 +107,22 @@ mapp_data[cols] <- mapp_data[cols] * mapp_data$bareground / 100
 Prepare sampling covariate data
 ```{r sampling covariates data prep}
 # Subset the data frame to include sampling covariates
-columns_sampling <- c("site","region", "visit", "plotID","surveyID", "date", "site", "temp", "wind", "cloud", "shade", "distwater", "timestart", "timestop")
+columns_sampling <- c("site","region", "visit", "plotID","surveyID", "date",
+                      "site", "temp", "wind", "cloud", "shade", "distwater",
+                      "timestart", "timestop")
 
 samplcov_data <- mapp_data[, columns_sampling]
 ```
 
 Prepare plant genus matrix
 ```{r plant data prep}
-plant_data <- mapp_data[, which(names(mapp_data) == "achillea"):which(names(mapp_data) == "vicia")]
+plant_data <- mapp_data[, which(names(mapp_data) == "achillea")
+                        :which(names(mapp_data) == "vicia")]
 
 # replace NA with 0 
 plant_data[is.na(plant_data)] <- 0
 
-# Calculate plant richness: number of genera present per row (i.e., richness per sample)
+# Calculate plant richness: number of genera present per row
 plant_data$richness <- rowSums(plant_data > 0, na.rm = TRUE)
 
 # Calculate relative abundance: sum of all genus abundances per row
@@ -160,8 +160,12 @@ plant_data$hill_q2 <- 1 / diversity(plant_data[1:131], index = "simpson")
 plant_data$hill_q2[is.infinite(plant_data$hill_q2)] <- NA
 
 # Current plant_data has metadata at the end; let's reorder
-plant_data <- plant_data[, c("site","region", "visit", "plotID","surveyID", "hill_q0", "hill_q1", "hill_q2",
-                              setdiff(names(plant_data), c("site", "visit", "plotID", "region", "surveyID", "hill_q0", "hill_q1", "hill_q2")))]
+plant_data <- plant_data[, c("site","region", "visit", "plotID",
+                             "surveyID", "hill_q0", "hill_q1", "hill_q2",
+                              setdiff(names(plant_data),
+                                      c("site", "visit", "plotID", "region",
+                                        "surveyID", "hill_q0", "hill_q1",
+                                        "hill_q2")))]
 ```
 
 Prepare bee data
@@ -1694,11 +1698,11 @@ bee_matrix <- bee_data[, !(names(bee_data) %in% c(
 spec_accum <- specaccum(bee_matrix, method = "random")
 
 site_cols <- list(
-  "focal" = "#6B7C93",
-  "control"   = "#D08C60",
-  "focal_light"   = "#9FAABD",
-  "control_light" = "#E6B899"
-)
+  "focal" = "#2C7FB8",
+  "control"   = "#D95F09",
+  "focal_light"   = "cadetblue3",
+  "control_light" = "#D95"
+  )
 
 # Plot the curve
 plot(spec_accum, 
@@ -1743,6 +1747,76 @@ legend("bottomright", legend = c("Control", "Focal"),
        col = c(site_cols$focal, site_cols$control), lwd = 2)
 
 ```
+
+```{r}
+regions <- unique(bee_data$region)
+
+accum_region <- lapply(regions, function(r) {
+  bee_matrix[bee_data$region == r, ]
+})
+
+names(accum_region) <- regions
+
+spec_accum_region <- lapply(accum_region, function(x) {
+  specaccum(x, method = "random")
+})
+
+region_cols <- c(
+  "region1" = "#4E79A7",
+  "region2" = "#59A14F",
+  "region3" = "#E15759",
+  "region4" = "#B07AA1"
+)
+
+region_cols_light <- c(
+  "region1" = "#A6C1E0",
+  "region2" = "#A8D5A2",
+  "region3" = "#F1B0AD",
+  "region4" = "#D7C1E3"
+)
+
+accum_region_df <- lapply(regions, function(r) {
+  
+  mat <- bee_matrix[bee_data$region == r, ]
+  
+  acc <- specaccum(mat, method = "random")
+  
+  data.frame(
+    surveys  = acc$sites,
+    richness = acc$richness,
+    sd       = acc$sd,
+    region   = r
+  )
+})
+
+accum_plot_data <- bind_rows(accum_region_df)
+
+
+ggplot(
+  accum_plot_data,
+  aes(x = surveys, y = richness, colour = region, fill = region)
+) +
+  geom_ribbon(
+    aes(ymin = richness - sd, ymax = richness + sd),
+    alpha = 0.25,
+    colour = NA
+  ) +
+  geom_line(linewidth = 1.2) +
+  labs(
+    x = "Number of surveys (plot visits)",
+    y = "Accumulated species richness",
+    title = "Species accumulation curves by region",
+    colour = "Region",
+    fill = "Region"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
+
+```
+
 
 ```{r}
 regions <- unique(bee_data$region)
@@ -1796,79 +1870,60 @@ for (r in regions) {
          cex = 0.95)
 }
 ```
-```{r}
 
-accum_df <- function(acc, region) {
-  data.frame(
-    surveys  = acc$sites,
-    richness = acc$richness,
-    sd       = acc$sd,
-    region   = region,
-    site     = site,
+```{r bee cumulative richness across time}
+abund_var <- "bee_abundance"
+
+bee_abund_cum <- bee_data %>%
+  arrange(plotID, visit) %>%
+  group_by(site, plotID) %>%
+  mutate(cum_abundance = cumsum(.data[[abund_var]])) %>%
+  ungroup()
+
+bee_abund_summary <- bee_abund_cum %>%
+  group_by(site, visit) %>%
+  summarise(
+    mean_abund = mean(cum_abundance, na.rm = TRUE),
+    se_abund   = sd(cum_abundance, na.rm = TRUE) / sqrt(n()),
+    .groups = "drop"
+  )
+
+site_cols <- list(
+  focal   = "#2C7FB8",
+  control = "#D95F09"
+)
+
+plot(
+  NULL,
+  xlim = range(bee_abund_summary$visit),
+  ylim = range(bee_abund_summary$mean_abund +
+                 bee_abund_summary$se_abund),
+  xlab = "Survey visit",
+  ylab = "Cumulative bee abundance",
+  main = "Cumulative Abundance Over Visits"
+)
+
+for (s in c("control", "focal")) {
+
+  d <- bee_abund_summary %>% filter(site == s)
+
+  lines(d$visit, d$mean_abund,
+        col = site_cols[[s]],
+        lwd = 2)
+
+  polygon(
+    c(d$visit, rev(d$visit)),
+    c(d$mean_abund - d$se_abund,
+      rev(d$mean_abund + d$se_abund)),
+    col = adjustcolor(site_cols[[s]], alpha.f = 0.3),
+    border = NA
   )
 }
 
-
-regions <- unique(bee_data$region)
-accum_list <- list()
-
-for (r in regions) {
-  
-  bee_reg <- bee_data |> 
-    filter(region == r)
-  
-  # species-only matrix
-  bee_mat <- bee_reg[, !(names(bee_reg) %in% c(
-    "surveyID", "plotID", "site", "region", "visit", "plot",
-    "richness", "fieldIDsum", "bee_abundance_nofieldID", "bee_abundance",
-    "RLabund_LC", "RLabund_NT", "RLabund_VU", "RLabund_EN", "RLabund_DD",
-    "RLrich_LC", "RLrich_NT", "RLrich_VU", "RLrich_EN", "RLrich_DD",
-    "RLrich_CR", "RLabund_CR", "RLrich_threatened",
-    "RLabund_threatened", "RLrich_total", "RLabund_total"
-  ))]
-  
-  acc <- specaccum(
-    bee_mat,
-    method = "random",
-    permutations = 999
-  )
-  
-  accum_list[[r]] <- accum_df(acc, r)
-}
-
-accum_plot_data <- bind_rows(accum_list)
-
-
-
-ggplot(accum_plot_data,
-       aes(x = surveys,
-           y = richness,
-           colour = region,
-           fill = region)) +
-  
-  geom_ribbon(aes(ymin = richness - sd,
-                  ymax = richness + sd),
-              alpha = 0.22,
-              colour = NA) +
-  
-  geom_line(linewidth = 1.3) +
-  
-  labs(
-    x = "Number of surveys",
-    y = "Accumulated species richness",
-    colour = "Region",
-    fill   = "Region",
-    title  = "Species accumulation curves by region"
-  ) +
-  
-  theme_bw(base_size = 12) +
-  
-  theme(
-    panel.grid = element_blank(),
-    legend.position = "right",
-    plot.title = element_text(face = "bold")
-  )
-
+legend("topleft",
+       legend = c("Control", "Focal"),
+       col = c(site_cols$control, site_cols$focal),
+       lwd = 2)
 
 ```
 
