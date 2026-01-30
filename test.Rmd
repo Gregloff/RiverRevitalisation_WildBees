@@ -37,18 +37,16 @@ library(vegan) #NMDS
 Import beedata and mapp_data, create metadata frame
 ```{r import data, include = FALSE}
 # nolint start: nonportable_path_linter.
-beedata <- read_excel(
-  "C:/Users/grege/OneDrive - unine.ch/PhD/Chapters/Chapter 1 - River revitalisation/data/beedata_RRproject_2025.xlsx",
-  skip = 1)
+beedata <- read_excel("../beedata_RRproject_2025.xlsx", skip = 1)
 
-mappingdata <- read_excel(
-  "C:/Users/grege/OneDrive - unine.ch/PhD/Chapters/Chapter 1 - River revitalisation/data/mappingdata_RRproject_2025.xlsx",
-  skip = 1)
+mappingdata <- read_excel("../mappingdata_RRproject_2025.xlsx", skip = 1)
 
-canopyhp <- read_excel(
-  "C:/Users/grege/OneDrive - unine.ch/PhD/Chapters/Chapter 1 - River revitalisation/data/canopy_hp/canopydata_RRproject_2025.xlsx",
-  skip = 1)
+canopyhp <- read_excel("../canopydata_RRproject_2025.xlsx", skip = 1)
 # nolint end
+```
+
+Clean data
+```{r}
 #add column with plotID
 
 beedata <- beedata |>
@@ -66,11 +64,12 @@ Prepare mapping data (without plants)
 ```{r mapp_data, habplot, habsite prep}
 mapp_data <- mappingdata
 
-# add canopy hp data 
+# add canopy hp data
 mapp_data <- mapp_data |>
   left_join(canopyhp |> select(plotID, canopy_hp), by = "plotID")
 
-# Subset the data frame to include plot scale mapping data (not including plant data)
+# Subset the data frame to include plot scale mapping data
+# (not including plant data)
 columns_plot <- c("plotID", "plot", "site", "region", "Xcoord", "Ycoord",
                   "Zcoord", "canton", "date", "visit", "surveyID", "observer",
                   "municipality", "bareground", "vegcover", "vegheight", "herb",
@@ -81,7 +80,7 @@ columns_plot <- c("plotID", "plot", "site", "region", "Xcoord", "Ycoord",
 
 habplot_data <- mapp_data[, columns_plot]
 
-# Subset the data frame to include site scale mapping data 
+# Subset the data frame to include site scale mapping data
 # (including site scale plant data)
 columns_site <- c("plotID", "plot", "site", "region", "Xcoord", "Ycoord",
                   "Zcoord", "canton", "date", "visit", "surveyID", "observer",
@@ -91,10 +90,9 @@ columns_site <- c("plotID", "plot", "site", "region", "Xcoord", "Ycoord",
                   "siteflat", "sitesloped", "sitesteep", "sitecanopy",
                   "sitepatchiness", "sitecornis", "sitecomment", "siteacer",
                   "sitecornus", "sitecrataegus", "siteeuonymus", "sitefrangula",
-                  "sitefraxinus", "ligustrum", "sitelonicera","siteprunus",
+                  "sitefraxinus", "ligustrum", "sitelonicera", "siteprunus",
                   "siterosa", "sitesalix", "sitesambucus", "siteviburnum",
                   "plotID")
-
 
 # Subset the data frame
 habsite_data <- mapp_data[, columns_site]
@@ -108,7 +106,7 @@ mapp_data[cols] <- mapp_data[cols] * mapp_data$bareground / 100
 Prepare sampling covariate data
 ```{r sampling covariates data prep}
 # Subset the data frame to include sampling covariates
-columns_sampling <- c("site","region", "visit", "plotID","surveyID", "date",
+columns_sampling <- c("site", "region", "visit", "plotID", "surveyID", "date",
                       "site", "temp", "wind", "cloud", "shade", "distwater",
                       "timestart", "timestop")
 
@@ -120,7 +118,7 @@ Prepare plant genus matrix
 plant_data <- mapp_data[, which(names(mapp_data) == "achillea")
                         :which(names(mapp_data) == "vicia")]
 
-# replace NA with 0 
+# replace NA with 0
 plant_data[is.na(plant_data)] <- 0
 
 # Calculate plant richness: number of genera present per row
@@ -130,7 +128,7 @@ plant_data$richness <- rowSums(plant_data > 0, na.rm = TRUE)
 plant_data$relabundance <- rowSums(plant_data, na.rm = TRUE)
 
 #Calculate the avg. relative abundance per plant genus per plot
-plant_data$avgrelabundance <- plant_data$relabundance/plant_data$richness
+plant_data$avgrelabundance <- plant_data$relabundance / plant_data$richness
 
 plant_data$site <- mapp_data$site
 
@@ -158,12 +156,12 @@ plant_data$hill_q2 <- 1 / diversity(plant_data[1:131], index = "invsimpson")
 plant_data$hill_q2[is.infinite(plant_data$hill_q2)] <- NA
 
 # Current plant_data has metadata at the end; let's reorder
-plant_data <- plant_data[, c("site","region", "visit", "plotID",
+plant_data <- plant_data[, c("site", "region", "visit", "plotID",
                              "surveyID", "hill_q0", "hill_q1", "hill_q2",
-                              setdiff(names(plant_data),
-                                      c("site", "visit", "plotID", "region",
-                                        "surveyID", "hill_q0", "hill_q1",
-                                        "hill_q2")))]
+                             setdiff(names(plant_data),
+                                     c("site", "visit", "plotID", "region",
+                                       "surveyID", "hill_q0", "hill_q1",
+                                       "hill_q2")))]
 ```
 
 Prepare bee data
@@ -182,7 +180,8 @@ beedata <- beedata |>
 bee_abundance_matrix <- beedata |>
   group_by(surveyID, bee_species) |>
   summarise(bee_abundance = n(), .groups = "drop") |>
-  pivot_wider(names_from = bee_species, values_from = bee_abundance, values_fill = 0)
+  pivot_wider(names_from = bee_species,
+              values_from = bee_abundance, values_fill = 0)
 
 # Reorder columns: keep 'surveyID' first, sort the rest alphabetically
 bee_abundance_matrix <- bee_abundance_matrix[, c(
@@ -200,16 +199,39 @@ bee_data <- left_join(metadata, bee_abundance_matrix, by = "surveyID")
 str(bee_data)
 
 #add field ID morphospecies of Bombus and Xylocopa (only for abundance data
-bee_data <- left_join(bee_data, mapp_data |> select(surveyID, fieldIDsum), by = "surveyID")
+bee_data <- left_join(bee_data, mapp_data |>
+                        select(surveyID, fieldIDsum), by = "surveyID")
 
 #Calculate bee species richness per plot
-bee_data$bee_richness <- rowSums(bee_data[, !(names(bee_data) %in% c("surveyID", "plotID", "site", "region", "visit", "plot", "fieldIDsum"))] > 0, na.rm = TRUE)
+bee_data$bee_richness <- rowSums(
+  bee_data[,
+           !(names(bee_data) %in%
+               c("surveyID", "plotID", "site", "region",
+                 "visit", "plot", "fieldIDsum"))
+           ] > 0,
+  na.rm = TRUE
+  )
 
-# Calculate total abundance by summing all species columns (not including fieldID Bombus / Xylocopa)
-bee_data$bee_abundance_nofieldID <- rowSums(bee_data[, !(names(bee_data) %in% c("surveyID", "plotID", "site", "region", "visit", "plot", "fieldIDsum", "bee_richness"))], na.rm = TRUE)
+# Calculate total abundance by summing all species columns 
+# (not including fieldID Bombus / Xylocopa)
+bee_data$bee_abundance_nofieldID <- rowSums(
+  bee_data[,
+           !(names(bee_data) %in%
+               c("surveyID", "plotID", "site", "region", "visit", "plot",
+                 "fieldIDsum", "bee_richness"))
+           ], 
+  na.rm = TRUE
+  )
 
 # Calculate total abundance by summing all species columns (including FieldIF)
-bee_data$bee_abundance<- rowSums(bee_data[, !(names(bee_data) %in% c("surveyID", "plotID", "site", "region", "visit", "plot", "bee_abundance_nofieldID", "bee_richness"))], na.rm = TRUE)
+bee_data$bee_abundance<- rowSums(
+  bee_data[,
+           !(names(bee_data) %in%
+               c("surveyID", "plotID", "site", "region", "visit",
+                 "plot", "bee_abundance_nofieldID", "bee_richness"))
+           ],
+  na.rm = TRUE
+  )
 
 # RL Abundance per survey (drop NA RLstatus)
 rl_abundance <- beedata |>
@@ -268,8 +290,12 @@ glimpse(bee_data)
 ```{r handle aggregates}
 
 # Define species within aggregates
-halictus_species <- c("Halictus simplex", "Halictus eurygnathus", "Halictus langobardicus")
-bombus_species <- c("Bombus terrestris", "Bombus cryptarum")
+halictus_species <- c("Halictus simplex", 
+                      "Halictus eurygnathus", 
+                      "Halictus langobardicus")
+
+bombus_species <- c("Bombus terrestris",
+                    "Bombus cryptarum")
 
 # Define aggregate column names
 halictus_aggr <- "Halictus simplex aggr."
@@ -285,7 +311,8 @@ for (i in 1:nrow(bee_data)) {
   bombus_present <- any(row[bombus_species] > 0)
   bombus_aggr_present <- row[[bombus_aggr]] > 0
   
-  if ((halictus_present & halictus_aggr_present) | (bombus_present & bombus_aggr_present)) {
+  if ((halictus_present & halictus_aggr_present) |
+      (bombus_present & bombus_aggr_present)) {
     cat("\n--- Row", i, "surveyID:", row$surveyID, "---\n")
     
     # Print Halictus species and aggregate if relevant
@@ -347,11 +374,17 @@ Descriptive analysis plant data
 ## Richness 
 # Wilcoxon test Richness overall site comparison (all visits combined)
 sig_label_richness_all <- case_when(
-  is.na(tryCatch(wilcox.test(richness ~ site, data = plant_data)$p.value, error = function(e) NA_real_)) ~ "NA",
-  tryCatch(wilcox.test(richness ~ site, data = plant_data)$p.value, error = function(e) NA_real_) < 0.001 ~ "***",
-  tryCatch(wilcox.test(richness ~ site, data = plant_data)$p.value, error = function(e) NA_real_) < 0.01 ~ "**",
-  tryCatch(wilcox.test(richness ~ site, data = plant_data)$p.value, error = function(e) NA_real_) < 0.05 ~ "*",
-  tryCatch(wilcox.test(richness ~ site, data = plant_data)$p.value, error = function(e) NA_real_) < 0.1 ~ "°",
+  is.na(
+    tryCatch(wilcox.test(richness ~ site, data = plant_data)$p.value,
+             error = function(e) NA_real_)) ~ "NA",
+  tryCatch(wilcox.test(richness ~ site, data = plant_data)$p.value,
+           error = function(e) NA_real_) < 0.001 ~ "***",
+  tryCatch(wilcox.test(richness ~ site, data = plant_data)$p.value,
+           error = function(e) NA_real_) < 0.01 ~ "**",
+  tryCatch(wilcox.test(richness ~ site, data = plant_data)$p.value,
+           error = function(e) NA_real_) < 0.05 ~ "*",
+  tryCatch(wilcox.test(richness ~ site, data = plant_data)$p.value,
+           error = function(e) NA_real_) < 0.1 ~ "°",
   TRUE ~ "ns"
 )
 
@@ -397,11 +430,17 @@ wilcox_results_richness_regvis <- plant_data |>
 ## Relative Abundance
 # Wilcoxon test for overall site comparison (all visits combined)
 sig_label_abundance_all <- case_when(
-  is.na(tryCatch(wilcox.test(relabundance ~ site, data = plant_data)$p.value, error = function(e) NA_real_)) ~ "NA",
-  tryCatch(wilcox.test(relabundance ~ site, data = plant_data)$p.value, error = function(e) NA_real_) < 0.001 ~ "***",
-  tryCatch(wilcox.test(relabundance ~ site, data = plant_data)$p.value, error = function(e) NA_real_) < 0.01 ~ "**",
-  tryCatch(wilcox.test(relabundance ~ site, data = plant_data)$p.value, error = function(e) NA_real_) < 0.05 ~ "*",
-  tryCatch(wilcox.test(relabundance ~ site, data = plant_data)$p.value, error = function(e) NA_real_) < 0.1 ~ "°",
+  is.na(
+    tryCatch(wilcox.test(relabundance ~ site, data = plant_data)$p.value,
+             error = function(e) NA_real_)) ~ "NA",
+  tryCatch(wilcox.test(relabundance ~ site, data = plant_data)$p.value,
+           error = function(e) NA_real_) < 0.001 ~ "***",
+  tryCatch(wilcox.test(relabundance ~ site, data = plant_data)$p.value,
+           error = function(e) NA_real_) < 0.01 ~ "**",
+  tryCatch(wilcox.test(relabundance ~ site, data = plant_data)$p.value,
+           error = function(e) NA_real_) < 0.05 ~ "*",
+  tryCatch(wilcox.test(relabundance ~ site, data = plant_data)$p.value,
+           error = function(e) NA_real_) < 0.1 ~ "°",
   TRUE ~ "ns"
 )
 
@@ -469,7 +508,9 @@ ggplot(plant_data, aes(x = factor(visit), y = richness, fill = site)) +
        x = "Visit", y = "Number of Genera (Richness)") +
   theme_minimal() +
   geom_text(data = wilcox_results_richness_vis,
-            aes(x = factor(visit), y = common_ymax_richness - 1, label = sig_label),
+            aes(x = factor(visit),
+                y = common_ymax_richness - 1,
+                label = sig_label),
             inherit.aes = FALSE, size = 5)
 
 
@@ -483,7 +524,9 @@ plot_Aire <- ggplot(subset(plant_data, region == "Aire"),
   scale_fill_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
   theme_minimal() +
   geom_text(data = subset(wilcox_results_richness_regvis, region == "Aire"),
-            aes(x = factor(visit), y = common_ymax_richness - 1, label = sig_label),
+            aes(x = factor(visit),
+                y = common_ymax_richness - 1,
+                label = sig_label),
             inherit.aes = FALSE, size = 5)
 
 # Scheulte
@@ -495,7 +538,9 @@ plot_Scheulte <- ggplot(subset(plant_data, region == "Scheulte"),
   scale_fill_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
   theme_minimal() +
   geom_text(data = subset(wilcox_results_richness_regvis, region == "Scheulte"),
-            aes(x = factor(visit), y = common_ymax_richness - 1, label = sig_label),
+            aes(x = factor(visit),
+                y = common_ymax_richness - 1,
+                label = sig_label),
             inherit.aes = FALSE, size = 5)
 
 # Thiele
@@ -507,7 +552,9 @@ plot_Thiele <- ggplot(subset(plant_data, region == "Thiele"),
   scale_fill_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
   theme_minimal() +
   geom_text(data = subset(wilcox_results_richness_regvis, region == "Thiele"),
-            aes(x = factor(visit), y = common_ymax_richness - 1, label = sig_label),
+            aes(x = factor(visit),
+                y = common_ymax_richness - 1,
+                label = sig_label),
             inherit.aes = FALSE, size = 5)
 
 # Schwarzbach
@@ -519,7 +566,9 @@ plot_Schwarzbach <- ggplot(subset(plant_data, region == "Schwarzbach"),
   scale_fill_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
   theme_minimal() +
   geom_text(data = subset(wilcox_results_richness_regvis, region == "Schwarzbach"),
-            aes(x = factor(visit), y = common_ymax_richness - 1, label = sig_label),
+            aes(x = factor(visit),
+                y = common_ymax_richness - 1,
+                label = sig_label),
             inherit.aes = FALSE, size = 5)
 
 # Patchwork combine
@@ -547,7 +596,9 @@ ggplot(plant_data, aes(x = factor(visit), y = relabundance, fill = site)) +
        x = "Visit", y = "Summed Relative Abundance") +
   theme_minimal() +
   geom_text(data = wilcox_results_abundance_vis,
-            aes(x = factor(visit), y = common_ymax_abundance - 1, label = sig_label),
+            aes(x = factor(visit),
+                y = common_ymax_abundance - 1,
+                label = sig_label),
             inherit.aes = FALSE, size = 5)
 
 
@@ -563,7 +614,9 @@ plot_Aire <- ggplot(subset(plant_data, region == "Aire"),
   scale_fill_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
   theme_minimal() +
   geom_text(data = subset(wilcox_results_abundance_regvis, region == "Aire"),
-            aes(x = factor(visit), y = common_ymax_abundance - 1, label = sig_label),
+            aes(x = factor(visit),
+                y = common_ymax_abundance - 1,
+                label = sig_label),
             inherit.aes = FALSE, size = 5)
 
 # Scheulte
@@ -575,7 +628,9 @@ plot_Scheulte <- ggplot(subset(plant_data, region == "Scheulte"),
   scale_fill_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
   theme_minimal() +
   geom_text(data = subset(wilcox_results_abundance_regvis, region == "Scheulte"),
-            aes(x = factor(visit), y = common_ymax_abundance - 1, label = sig_label),
+            aes(x = factor(visit),
+                y = common_ymax_abundance - 1,
+                label = sig_label),
             inherit.aes = FALSE, size = 5)
 
 # Thiele
@@ -587,7 +642,9 @@ plot_Thiele <- ggplot(subset(plant_data, region == "Thiele"),
   scale_fill_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
   theme_minimal() +
   geom_text(data = subset(wilcox_results_abundance_regvis, region == "Thiele"),
-            aes(x = factor(visit), y = common_ymax_abundance - 1, label = sig_label),
+            aes(x = factor(visit),
+                y = common_ymax_abundance - 1,
+                label = sig_label),
             inherit.aes = FALSE, size = 5)
 
 # Schwarzbach
@@ -599,7 +656,9 @@ plot_Schwarzbach <- ggplot(subset(plant_data, region == "Schwarzbach"),
   scale_fill_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
   theme_minimal() +
   geom_text(data = subset(wilcox_results_abundance_regvis, region == "Schwarzbach"),
-            aes(x = factor(visit), y = common_ymax_abundance - 1, label = sig_label),
+            aes(x = factor(visit),
+                y = common_ymax_abundance - 1,
+                label = sig_label),
             inherit.aes = FALSE, size = 5)
 
 # Patchwork combine
@@ -698,7 +757,8 @@ plot_Schwarzbach_q1 <- ggplot(subset(plant_data, region == "Schwarzbach"),
             aes(x = factor(visit), y = common_ymax_q1 - 0.5, label = sig_label),
             inherit.aes = FALSE, size = 5)
 
-hill_q1_patchwork <- (plot_Aire_q1 | plot_Scheulte_q1) / (plot_Thiele_q1 | plot_Schwarzbach_q1)
+hill_q1_patchwork <-
+  (plot_Aire_q1 | plot_Scheulte_q1) / (plot_Thiele_q1 | plot_Schwarzbach_q1)
 
 ### Hill q2 plots by region
 plot_Aire_q2 <- ggplot(subset(plant_data, region == "Aire"),
@@ -747,7 +807,8 @@ plot_Schwarzbach_q2 <- ggplot(subset(plant_data, region == "Schwarzbach"),
 
 # Repeat same structure for Scheulte, Thiele, Schwarzbach
 # Combine into patchwork
-hill_q2_patchwork <- (plot_Aire_q2 | plot_Scheulte_q2) / (plot_Thiele_q2 | plot_Schwarzbach_q2)
+hill_q2_patchwork <-
+  (plot_Aire_q2 | plot_Scheulte_q2) / (plot_Thiele_q2 | plot_Schwarzbach_q2)
 
 # Display both patchworks
 hill_q1_patchwork
@@ -798,13 +859,16 @@ plot_region_patch <- function(reg) {
   ggplot(subset(mappingdata, region == reg),
          aes(x = factor(visit), y = patchiness, fill = site)) +
     geom_boxplot(position = position_dodge()) +
-    coord_cartesian(ylim = c(min(mappingdata$patchiness, na.rm = TRUE), common_ymax_patch)) +
+    coord_cartesian(ylim = c(min(mappingdata$patchiness, na.rm = TRUE),
+                             common_ymax_patch)) +
     labs(title = reg, x = "Visit", y = ylab_patch) +
     scale_fill_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
     theme_minimal() +
     geom_text(
       data = subset(wilcox_results_patchiness, region == reg),
-      aes(x = factor(visit), y = common_ymax_patch - 0.05 * (common_ymax_patch - min(mappingdata$patchiness, na.rm = TRUE)), 
+      aes(x = factor(visit),
+          y = common_ymax_patch - 0.05 *
+            (common_ymax_patch - min(mappingdata$patchiness, na.rm = TRUE)), 
           label = sig_label),
       inherit.aes = FALSE, size = 5
     )
@@ -823,7 +887,8 @@ patchiness_patchwork
 Descriptive analysis bee data
 ```{r bee data overview numbers}
 # total species count
-length(which(names(bee_data) == "Andrena aeneiventris"): which(names(bee_data) == "Stelis punctulatissima"))
+length(which(names(bee_data) == "Andrena aeneiventris"):
+         which(names(bee_data) == "Stelis punctulatissima"))
 
 
 
@@ -833,8 +898,10 @@ end   <- match("Stelis punctulatissima", names(bee_data))
 species_cols <- start:end
 
 # Logical presence (>=1) per site type
-control_pres <- colSums(bee_data[bee_data$site == "control", species_cols] > 0, na.rm = TRUE) > 0
-focal_pres   <- colSums(bee_data[bee_data$site == "focal",   species_cols] > 0, na.rm = TRUE) > 0
+control_pres <- colSums(bee_data[bee_data$site == "control",
+                                 species_cols] > 0, na.rm = TRUE) > 0
+focal_pres   <- colSums(bee_data[bee_data$site == "focal",
+                                 species_cols] > 0, na.rm = TRUE) > 0
 
 # Number of Bee species by site
 sum(control_pres)
@@ -858,7 +925,9 @@ sig_label_beeri_all <- case_when(
 wilcox_beeri_by_visit <- bee_data |>
   group_by(visit) |>
   summarise(
-    p_value = tryCatch(wilcox.test(bee_richness ~ site)$p.value, error = function(e) NA_real_),
+    p_value = tryCatch(
+      wilcox.test(bee_richness ~ site)$p.value,
+      error = function(e) NA_real_),
     sig_label = case_when(
       is.na(p_value) ~ "NA",
       p_value < 0.001 ~ "***",
@@ -912,7 +981,9 @@ sig_label_beeab_all <- case_when(
 wilcox_beeab_by_visit <- bee_data |>
   group_by(visit) |>
   summarise(
-    p_value = tryCatch(wilcox.test(bee_abundance ~ site)$p.value, error = function(e) NA_real_),
+    p_value = tryCatch(
+      wilcox.test(bee_abundance ~ site)$p.value,
+      error = function(e) NA_real_),
     sig_label = case_when(
       is.na(p_value) ~ "NA",
       p_value < 0.001 ~ "***",
@@ -963,7 +1034,9 @@ ggplot(bee_data, aes(x = factor(visit), y = bee_richness, fill = site)) +
        y = "Number of Bee Species (Richness)") +
   theme_minimal() +
   geom_text(data = wilcox_beeri_by_visit,
-            aes(x = factor(visit), y = max(bee_data$bee_richness, na.rm = TRUE) - 1, label = sig_label),
+            aes(x = factor(visit),
+                y = max(bee_data$bee_richness, na.rm = TRUE) - 1,
+                label = sig_label),
             inherit.aes = FALSE,
             size = 5)
 
@@ -982,7 +1055,10 @@ ggplot(bee_data, aes(x = site, y = bee_richness, fill = site)) +
 common_ymax <- max(bee_data$bee_richness, na.rm = TRUE)
 
 # Aire
-plot_Aire <- ggplot(subset(bee_data, region == "Aire"),aes(x = factor(visit), y = bee_richness, fill = site)) +
+plot_Aire <- ggplot(subset(bee_data, region == "Aire"),
+                    aes(x = factor(visit),
+                        y = bee_richness,
+                        fill = site)) +
   geom_boxplot(position = position_dodge()) +
   coord_cartesian(ylim = c(0, common_ymax)) +
   labs(title = "Aire", x = "Visit", y = "Bee Species Richness") +
@@ -1030,7 +1106,9 @@ plot_Thiele <- plot_Thiele +
 
 # Schwarzbach
 plot_Schwarzbach <- ggplot(subset(bee_data, region == "Schwarzbach"),
-                           aes(x = factor(visit), y = bee_richness, fill = site)) +
+                           aes(x = factor(visit),
+                               y = bee_richness,
+                               fill = site)) +
   geom_boxplot(position = position_dodge()) +
   coord_cartesian(ylim = c(0, common_ymax)) +
   labs(title = "Schwarzbach", x = "Visit", y = "Bee Species Richness") +
@@ -1057,7 +1135,9 @@ ggplot(bee_data, aes(x = factor(visit), y = bee_abundance, fill = site)) +
        fill = "Site Type") +
   theme_minimal() +
   geom_text(data = wilcox_beeab_by_visit,
-            aes(x = factor(visit), y = max(bee_data$bee_abundance, na.rm = TRUE) - 1, label = sig_label),
+            aes(x = factor(visit),
+                y = max(bee_data$bee_abundance, na.rm = TRUE) - 1,
+                label = sig_label),
             inherit.aes = FALSE,
             size = 5)
 
@@ -1086,7 +1166,9 @@ plot_Aire <- ggplot(subset(bee_data, region == "Aire"),
 aire_labels_abund <- wilcox_results_beeab |> filter(region == "Aire")
 plot_Aire <- plot_Aire +
   geom_text(data = aire_labels_abund,
-            aes(x = factor(visit), y = common_ymax_abund - 1, label = sig_label),
+            aes(x = factor(visit),
+                y = common_ymax_abund - 1,
+                label = sig_label),
             inherit.aes = FALSE,
             size = 5)
 
@@ -1298,7 +1380,7 @@ ggsave(
          x = "",
          y = "Abundanz pro Probefläche") +
     scale_x_discrete(labels = c("focal" = "Renaturiert", "control" = "Kontrollabschnitt")) +
-    scale_fill_manual(values = c("focal" = "#66c2a5", "control" = "#8c8c8c")) + # Revitalisé = green, Chenalisé = gray
+    scale_fill_manual(values = c("focal" = "#66c2a5", "control" = "#8c8c8c")) +
     theme_classic() +
     theme(axis.text.x = element_text(size = 16, margin = margin(t = 5)),
           axis.text.y = element_text(size = 16, margin = margin(r = 5)),
@@ -1611,73 +1693,6 @@ ggplot(rl_abund_fc, aes(x = site, y = value, fill = site)) +
 
 ```
 
-
-```{r bee Red List pie charts}
-
-# Define Red List richness columns in the desired order
-rl_cols <- c("RLrich_LC", "RLrich_NT", "RLrich_VU", "RLrich_EN", "RLrich_DD", "RLrich_CR")
-
-# 2) Define a stable color palette and NAME the vector with the base category names
-#    (we will keep fill mapping on the base category, not the label text)
-base_colors <- brewer.pal(n = length(rl_cols), name = "Set2")
-names(base_colors) <- rl_cols  # named vector ensures correct mapping
-
-# 3) Helper to summarise counts and build a label table with percentages
-prepare_summary <- function(data, site_label) {
-  long <- data |>
-    summarise(across(all_of(rl_cols), sum, na.rm = TRUE)) |>
-    pivot_longer(cols = everything(),
-                 names_to = "RL_category",
-                 values_to = "count") |>
-    mutate(site = site_label) |>
-    mutate(RL_category = factor(RL_category, levels = rl_cols))  # lock order
-  
-  # compute percentages for legend labels
-  total <- sum(long$count)
-  long |>
-    mutate(perc = round(100 * count / total, 1),
-           legend_label = paste0(RL_category, " (", perc, "%)"))
-}
-
-# 4) Build summaries
-focal_summary   <- prepare_summary(filter(bee_data, site == "focal"),   "Focal")
-control_summary <- prepare_summary(filter(bee_data, site == "control"), "Control")
-
-# 5) Create a lookup from category -> legend label (per plot)
-focal_label_map   <- setNames(focal_summary$legend_label,   focal_summary$RL_category)
-control_label_map <- setNames(control_summary$legend_label, control_summary$RL_category)
-
-# 6) Build pies using RL_category as the fill aesthetic (factor with fixed levels)
-p_focal <- ggplot(focal_summary, aes(x = "", y = count, fill = RL_category)) +
-  geom_bar(stat = "identity", width = 1) +
-  coord_polar("y") +
-  labs(title = "Focal Sites", fill = "Red List Category") +
-  theme_void() +
-  # Ensure consistent colors and order via named 'values' + 'breaks'
-  scale_fill_manual(
-    values = base_colors,              # named by RLrich_* columns
-    breaks = rl_cols,                  # ensure order
-    labels = focal_label_map[rl_cols]  # percent labels per category for this plot
-  )
-
-p_control <- ggplot(control_summary, aes(x = "", y = count, fill = RL_category)) +
-  geom_bar(stat = "identity", width = 1) +
-  coord_polar("y") +
-  labs(title = "Control Sites", fill = "Red List Category") +
-  theme_void() +
-  scale_fill_manual(
-    values = base_colors,
-    breaks = rl_cols,
-    labels = control_label_map[rl_cols]
-  )
-
-# 7) Combine and collect a single shared legend
-(p_focal | p_control) +
-  plot_layout(guides = "collect") &
-  theme(legend.position = "bottom")
-
-```
-
 ```{r bee accumulaion curve}
 colnames(bee_data)
 
@@ -1969,315 +1984,7 @@ legend("topleft",
 
 ```
 
-
-<!-- NMDS plants attempt # 1: keeping all plos and visit separate. As many plots have value = 0, I add a dummy collumn. Stress value is high, however. -->
-<!-- ```{r plant NMDS build: all visits and plot, eval = interactive()} -->
-<!-- colnames(plant_data) -->
-
-<!-- metadata_cols <- c("site", "visit", "region", "plotID", "surveyID") -->
-<!-- diversity_cols <- c("hill_q1", "hill_q2", "richness", "relabundance", "avgrelabundance") -->
-
-<!-- # Extract metadata and species matrix -->
-<!-- plant_meta <- plant_data[, metadata_cols] -->
-<!-- plant_species <- plant_data[, !(names(plant_data) %in% c(metadata_cols, diversity_cols))] -->
-
-<!-- # Add a dummy species column (bray Curtis cannot handle plots without plant presence) -->
-<!-- plant_species$dummy <- 0.001 -->
-
-<!-- # Run NMDS -->
-<!-- set.seed(123) -->
-<!-- nmds_plant <- metaMDS(plant_species, distance = "bray", k = 2, trymax = 100) -->
-
-<!-- ``` -->
-
-<!-- ```{r plant NMDS plot: all visits and plots, eval = interactive()} -->
-
-<!-- # Combine NMDS scores with metadata -->
-
-<!-- plant_scores <- as.data.frame(scores(nmds_plant)$sites) -->
-<!-- plant_scores <- cbind(plant_meta, plant_scores) -->
-
-<!-- # === 4. Plot NMDS === -->
-<!-- ggplot(plant_scores, aes(x = NMDS1, y = NMDS2, color = site)) + -->
-<!--   geom_point(aes(shape = region), size = 3) + -->
-<!--   theme_minimal() + -->
-<!--   labs(title = "NMDS of Plant Communities", color = "Site", shape = "Region") -->
-
-<!-- #adonis site -->
-<!-- adonis2(plant_species ~ site, data = plant_meta, method = "bray") -->
-
-<!-- # adonis interaction site - region -->
-<!-- adonis2(plant_species ~ site * region, data = plant_meta, method = "bray") -->
-<!-- ``` -->
-
-<!-- NMDS plants attempt # 2: merge all plots across regions per site and visit -->
-<!-- ```{r plant NMDS build: merged all surveys by region and site, eval = interactive()} -->
-
-<!-- metadata_cols_merged_reg <- c("site", "visit") -->
-<!-- diversity_cols <- c("hill_q1", "hill_q2", "richness", "relabundance", "avgrelabundance") -->
-
-<!-- # Merge plots per site + visit by summing species abundances -->
-<!-- plant_merged_reg <- plant_data |> -->
-<!--   group_by(site, visit) |> -->
-<!--   summarise(across(where(is.numeric), sum), .groups = "drop") -->
-
-<!-- # Extract metadata and species matrix -->
-<!-- plant_merged_reg_meta <- plant_merged_reg[, metadata_cols_merged_reg] -->
-<!-- plant_merged_reg_species <- plant_merged_reg[, !(names(plant_merged_reg) %in% c(metadata_cols, diversity_cols))] -->
-
-<!-- # Run NMDS on merged data -->
-<!-- set.seed(123) -->
-<!-- nmds_merged_reg <- metaMDS(plant_merged_reg_species, distance = "bray", k = 2, trymax = 100) -->
-
-<!-- # View NMDS results -->
-<!-- print(nmds_merged_reg) -->
-
-<!-- # Run PERMANOVA -->
-<!-- adonis2_result <- adonis2(plant_merged_reg_species ~ site, data = plant_merged_reg_meta, method = "bray") -->
-
-<!-- # View results -->
-<!-- print(adonis2_result) -->
-
-
-<!-- ``` -->
-
-<!-- ```{r plant NMDS build: merged all surveys by region and site plot, eval = interactive()} -->
-
-<!-- # Extract NMDS scores -->
-<!-- scores_df_nmds_merged_reg <- as.data.frame(scores(nmds_merged_reg, display = "sites")) -->
-<!-- scores_df_nmds_merged_reg$site <- plant_merged_reg_meta$site -->
-<!-- scores_df_nmds_merged_reg$visit <- plant_merged_reg_meta$visit -->
-
-<!-- # Plot with ellipsoids and visit labels -->
-<!-- ggplot(scores_df_nmds_merged_reg, aes(x = NMDS1, y = NMDS2, color = site)) + -->
-<!--   geom_point(size = 3) + -->
-<!--   geom_text(aes(label = visit), vjust = -1, size = 3) + -->
-<!--   stat_ellipse(type = "norm", level = 0.95, linetype = "dashed") + -->
-<!--   theme_minimal() + -->
-<!--   labs(title = "NMDS with Site Ellipsoids and Visit Labels", color = "Site") -->
-
-
-<!-- ``` -->
-
-<!-- ```{r plant NMDS build: merge surveys within visit by region and site, eval = interactive()} -->
-
-<!-- # Define metadata and diversity columns -->
-<!-- metadata_cols_merged_plot <- c("site", "visit", "region") -->
-<!-- diversity_cols <- c("hill_q1", "hill_q2", "richness", "relabundance", "avgrelabundance") -->
-
-<!-- # Merge plots within each site per visit -->
-<!-- plant_merged_plot <- plant_data |> -->
-<!--   group_by(region, site, visit) |> -->
-<!--   summarise(across(where(is.numeric), sum), .groups = "drop") -->
-
-<!-- # Extract metadata and species matrix -->
-<!-- meta_cols <- c("region", "site", "visit") -->
-<!-- plant_merged_plot_meta <- plant_merged_plot[, meta_cols] -->
-<!-- plant_merged_plot_species <- plant_merged_plot[, !(names(plant_merged_plot) %in% c(meta_cols, diversity_cols))] -->
-
-<!-- # Add dummy species to avoid empty rows -->
-<!-- plant_merged_plot_species$dummy <- 0.001 -->
-
-<!-- # Run NMDS -->
-<!-- set.seed(123) -->
-<!-- nmds_merged_plot <- metaMDS(plant_merged_plot_species, distance = "bray", k = 2, trymax = 100) -->
-
-<!-- # Extract NMDS scores -->
-<!-- scores_df_nmds_merged_plot <- as.data.frame(scores(nmds_merged_plot, display = "sites")) -->
-<!-- scores_df_nmds_merged_plot$site <- plant_merged_plot_meta$site -->
-<!-- scores_df_nmds_merged_plot$visit <- plant_merged_plot_meta$visit -->
-<!-- scores_df_nmds_merged_plot$region <- plant_merged_plot_meta$region -->
-
-<!-- # Plot NMDS with ellipsoids per site and visit labels -->
-<!-- ggplot(scores_df_nmds_merged_plot, aes(x = NMDS1, y = NMDS2, color = site)) + -->
-<!--   geom_point(size = 3) + -->
-<!--   geom_text(aes(label = visit), vjust = -1, size = 3) + -->
-<!--   stat_ellipse(type = "norm", level = 0.95, linetype = "dashed") + -->
-<!--   theme_minimal() + -->
-<!--   labs(title = "NMDS with Site Ellipsoids and Visit Labels", color = "Site") -->
-
-<!-- ``` -->
-
-<!-- ```{r plant NMDS build and plot: separate plots by visit, eval = interactive()} -->
-<!-- # Define metadata and species columns -->
-<!-- metadata_cols <- c("site", "visit", "region", "plotID", "surveyID") -->
-<!-- diversity_cols <- c("hill_q1", "hill_q2", "richness", "relabundance", "avgrelabundance") -->
-
-<!-- # Extract metadata and species matrix -->
-<!-- plant_meta <- plant_data[, metadata_cols] -->
-<!-- plant_species <- plant_data[, !(names(plant_data) %in% c(metadata_cols, diversity_cols))] -->
-
-<!-- # Add dummy species column -->
-<!-- plant_species$dummy <- 0.001 -->
-
-<!-- # Combine metadata and species -->
-<!-- plant_full <- cbind(plant_meta, plant_species) -->
-
-<!-- # Get unique visits -->
-<!-- visits <- unique(plant_full$visit) -->
-
-<!-- # Loop over visits and create NMDS plots -->
-<!-- for (v in visits) { -->
-<!--   # Subset data for the visit -->
-<!--   visit_data <- plant_full |> filter(visit == v) -->
-
-<!--   # Separate species and metadata -->
-<!--   visit_species <- visit_data[, !(names(visit_data) %in% metadata_cols)] -->
-<!--   visit_meta <- visit_data[, metadata_cols] -->
-
-<!--   # Run NMDS -->
-<!--   set.seed(123) -->
-<!--   nmds <- metaMDS(visit_species, distance = "bray", k = 2, trymax = 100) -->
-
-<!--   # Get NMDS scores -->
-<!--   scores_df <- as.data.frame(scores(nmds)$sites) -->
-<!--   scores_df <- cbind(visit_meta, scores_df) -->
-
-<!--   # Plot with ellipsoids by site -->
-<!--   p <- ggplot(scores_df, aes(x = NMDS1, y = NMDS2, color = site)) + -->
-<!--     geom_point(aes(shape = region), size = 3) + -->
-<!--     stat_ellipse(aes(group = site), type = "norm", linetype = "dashed") + -->
-<!--     theme_minimal() + -->
-<!--     labs(title = paste("NMDS of Plant Communities - Visit", v), -->
-<!--          color = "Site", shape = "Region") -->
-
-<!--   print(p) -->
-<!-- } -->
-<!-- ``` -->
-
-<!-- NMDS bee data -->
-<!-- ```{r NMDS bee data plotted separately by visit, eval = interactive()} -->
-<!-- # Define metadata and species columns -->
-<!-- metadata_cols_bee <- c("surveyID", "plotID", "site", "region", "visit", "plot") -->
-<!-- diversity_cols_bee <- c("richness", "fieldIDsum", "bee_abundance_nofieldID", "bee_abundance", -->
-<!--   "RLabund_LC", "RLabund_NT", "RLabund_VU", "RLabund_EN", "RLabund_DD", -->
-<!--   "RLrich_LC", "RLrich_NT", "RLrich_VU", "RLrich_EN", "RLrich_DD", -->
-<!--   "RLrich_CR", "RLabund_CR", "RLrich_threatened", "RLabund_threatened", -->
-<!--   "RLrich_total", "RLabund_total") -->
-
-<!-- # Extract metadata and species matrix -->
-<!-- bee_meta <- bee_data[, metadata_cols_bee] -->
-<!-- bee_species <- bee_data[, !(names(bee_data) %in% c(metadata_cols_bee, diversity_cols_bee))] -->
-
-<!-- # Add dummy species column -->
-<!-- bee_species$dummy <- 0.001 -->
-
-<!-- # Combine metadata and species -->
-<!-- bee_full <- cbind(bee_meta, bee_species) -->
-
-<!-- # Get unique visits -->
-<!-- visits <- unique(bee_full$visit) -->
-
-<!-- # Loop over visits and create NMDS plots -->
-<!-- for (v in visits) { -->
-<!--   # Subset data for the visit -->
-<!--   visit_data <- bee_full |> filter(visit == v) -->
-
-<!--   # Separate species and metadata -->
-<!--   visit_species <- visit_data[, !(names(visit_data) %in% metadata_cols_bee)] -->
-<!--   visit_meta <- visit_data[, metadata_cols_bee] -->
-
-<!--   # Run NMDS -->
-<!--   set.seed(123) -->
-<!--   nmds <- metaMDS(visit_species, distance = "bray", k = 2, trymax = 100) -->
-
-<!--   # Get NMDS scores -->
-<!--   scores_df <- as.data.frame(scores(nmds)$sites) -->
-<!--   scores_df <- cbind(visit_meta, scores_df) -->
-
-<!--   # Plot with ellipsoids by site -->
-<!--   p <- ggplot(scores_df, aes(x = NMDS1, y = NMDS2, color = site)) + -->
-<!--     geom_point(aes(shape = region), size = 3) + -->
-<!--     stat_ellipse(aes(group = site), type = "norm", linetype = "dashed") + -->
-<!--     theme_minimal() + -->
-<!--     labs(title = paste("NMDS of Bee Communities - Visit", v), -->
-<!--          color = "Site", shape = "Region") -->
-
-<!--   print(p) -->
-<!-- } -->
-<!-- ``` -->
-
-<!-- ```{r NMDS bee data plotted separately by visit - delete rows with 0, eval = interactive()} -->
-<!-- # Define metadata and species columns -->
-<!-- metadata_cols_bee <- c("surveyID", "plotID", "site", "region", "visit", "plot") -->
-<!-- diversity_cols_bee <- c("richness", "fieldIDsum", "bee_abundance_nofieldID", "bee_abundance", -->
-<!--   "RLabund_LC", "RLabund_NT", "RLabund_VU", "RLabund_EN", "RLabund_DD", -->
-<!--   "RLrich_LC", "RLrich_NT", "RLrich_VU", "RLrich_EN", "RLrich_DD", -->
-<!--   "RLrich_CR", "RLabund_CR", "RLrich_threatened", "RLabund_threatened", -->
-<!--   "RLrich_total", "RLabund_total") -->
-
-<!-- # Extract metadata and species matrix -->
-<!-- bee_meta <- bee_data[, metadata_cols_bee] -->
-<!-- bee_species <- bee_data[, !(names(bee_data) %in% c(metadata_cols_bee, diversity_cols_bee))] -->
-
-<!-- # Remove rows where all species values are zero -->
-<!-- bee_species_filtered <- bee_species[rowSums(bee_species) > 0, ] -->
-
-<!-- # Match metadata to filtered species data -->
-<!-- bee_meta_filtered <- bee_meta[rowSums(bee_species) > 0, ] -->
-
-<!-- # Combine metadata and species -->
-<!-- bee_full_filtered <- cbind(bee_meta_filtered, bee_species_filtered) -->
-
-<!-- # Get unique visits -->
-<!-- visits <- unique(bee_full_filtered$visit) -->
-
-<!-- # store nmds scores in list -->
-<!-- nmds_list <- list() -->
-<!-- scores_list <- list() -->
-
-<!-- for (v in visits) { -->
-<!--   visit_data <- bee_full_filtered |> filter(visit == v) -->
-<!--   visit_species <- visit_data[, !(names(visit_data) %in% metadata_cols_bee)] -->
-<!--   visit_meta <- visit_data[, metadata_cols_bee] -->
-
-<!--   set.seed(123) -->
-<!--   nmds <- metaMDS(visit_species, distance = "bray", k = 2, trymax = 100) -->
-
-<!--   scores_df <- as.data.frame(scores(nmds)$sites) -->
-<!--   scores_df <- cbind(visit_meta, scores_df) -->
-
-<!--   nmds_list[[v]] <- nmds -->
-<!--   scores_list[[v]] <- scores_df -->
-<!-- } -->
-
-<!-- # plot with and without outliers -->
-<!-- for (v in visits) { -->
-<!--   scores_df <- scores_list[[v]] -->
-
-<!--   # Identify outliers -->
-<!--   scores_df$z_NMDS1 <- scale(scores_df$NMDS1) -->
-<!--   scores_df$z_NMDS2 <- scale(scores_df$NMDS2) -->
-<!--   scores_df$outlier <- abs(scores_df$z_NMDS1) > 2 | abs(scores_df$z_NMDS2) > 2 -->
-
-<!--   # Plot with outliers -->
-<!--   p1 <- ggplot(scores_df, aes(x = NMDS1, y = NMDS2, color = site)) + -->
-<!--     geom_point(aes(shape = region), size = 3) + -->
-<!--     stat_ellipse(aes(group = site), type = "norm", linetype = "dashed") + -->
-<!--     theme_minimal() + -->
-<!--     labs(title = paste("NMDS of Bee Communities - Visit", v, "(All Points)"), -->
-<!--          color = "Site", shape = "Region") -->
-
-<!--   print(p1) -->
-
-<!--   # Plot without outliers -->
-<!--   scores_df_filtered <- scores_df |> filter(!outlier) -->
-
-<!--   p2 <- ggplot(scores_df_filtered, aes(x = NMDS1, y = NMDS2, color = site)) + -->
-<!--     geom_point(aes(shape = region), size = 3) + -->
-<!--     stat_ellipse(aes(group = site), type = "norm", linetype = "dashed") + -->
-<!--     theme_minimal() + -->
-<!--     labs(title = paste("NMDS of Bee Communities - Visit", v, "(Outliers Removed)"), -->
-<!--          color = "Site", shape = "Region") -->
-
-<!--   print(p2) -->
-<!-- } -->
-
-<!-- ``` -->
-
-
 # Bee models
-
 Create full dataset for modelling
 ```{r bee model data prep: data_all prep}
 data_all <- merge(habplot_data, plant_data, by = "surveyID")
