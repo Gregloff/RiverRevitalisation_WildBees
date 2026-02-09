@@ -1,0 +1,850 @@
+---
+title: "05_site_unimodel"
+output: html_document
+---
+
+```{r Load packages}
+
+library(tidyverse)
+library(vegan)
+library(iNEXT)
+library(lme4)
+library(lmerTest)
+library(broom.mixed)
+```
+
+```{r Load data}
+# Compact helper function to read raw CSVs
+bee_data <- read.csv(file.path("..", "data", "cleaned", "bee_data.csv"),
+           stringsAsFactors = FALSE,
+           check.names = FALSE)
+```
+
+
+```{r Data prep}
+# 0) Make absolutely sure the names you use are present in bee_data
+# (your range is correct and includes 145 species)
+species_cols <-
+  names(bee_data) |>
+  (\(nm) nm[
+    match("Andrena aeneiventris", nm) :
+    match("Stelis punctulatissima", nm)
+  ])()
+
+# Sanity assert: all species columns exist in bee_data
+missing_in_bee_data <- setdiff(species_cols, names(bee_data))
+if (length(missing_in_bee_data) > 0) {
+  stop("These species names are not in bee_data: ",
+       paste(missing_in_bee_data, collapse = ", "))
+}
+
+# 1) Aggregate to **plot** level (sum across visits), keeping ALL species
+bee_plot <-
+  bee_data |>
+  select(region, site, plotID, plot, all_of(species_cols)) |>
+  group_by(region, site, plotID, plot) |>
+  summarise(across(all_of(species_cols), ~ sum(.x, na.rm = TRUE)),
+            .groups = "drop") |>
+  arrange(region, site, plot)
+
+# Quick check: the two Andrena species should be present now
+grep("Andrena aeneiventris", names(bee_plot), value = TRUE)
+grep("Andrena afzeliella", names(bee_plot), value = TRUE)
+
+# 2) (Optional) Aggregate further to **site** level (8 rows)
+bee_site <-
+  bee_plot |>
+  group_by(region, site) |>
+  summarise(across(all_of(species_cols), ~ sum(.x, na.rm = TRUE)),
+            .groups = "drop") |>
+  arrange(region, site)
+
+# Verify those species exist after site aggregation too
+grep("Andrena aeneiventris", names(bee_site), value = TRUE)
+grep("Andrena afzeliella", names(bee_site), value = TRUE)
+
+# 3) Final community matrices (species only)
+comm_plot <-
+  bee_plot |>
+  select(all_of(species_cols)) |>
+  as.data.frame()
+
+comm_site <-
+  bee_site |>
+  select(all_of(species_cols)) |>
+  as.data.frame()
+
+# A) Across the entire dataset (plot aggregation should keep species totals)
+stopifnot(sum(bee_data$`Andrena aeneiventris`, na.rm = TRUE) ==
+            sum(bee_plot$`Andrena aeneiventris`, na.rm = TRUE))
+
+stopifnot(sum(bee_data$`Andrena afzeliella`, na.rm = TRUE) ==
+            sum(bee_plot$`Andrena afzeliella`, na.rm = TRUE))
+
+# B) Within each (region, site) pair (site aggregation preserves plot totals)
+check_aeneiventris <-
+  bee_plot |>
+  group_by(region, site) |>
+  summarise(x = sum(`Andrena aeneiventris`, na.rm = TRUE), .groups = "drop") |>
+  left_join(
+    bee_site |>
+      select(region, site, `Andrena aeneiventris`) |>
+      rename(y = `Andrena aeneiventris`),
+    by = c("region", "site")
+  ) |>
+  mutate(diff = x - y)
+
+stopifnot(max(abs(check_aeneiventris$diff), na.rm = TRUE) == 0)
+```
+# Rarefy on plot-scale
+```{r}
+# Convert plot-level community matrix to matrix format
+comm_plot_mat <- comm_plot |> as.matrix()
+
+# Total individuals per plot
+n_total_plot <- rowSums(comm_plot_mat)
+
+# Rarefaction size = minimum number of individuals across plots
+m_plot <- min(n_total_plot)
+message("Common rarefaction size for plot-level rarefaction m_plot = ", m_plot)
+print(n_total_plot)
+```
+
+```{r Rerefied q0 computation}
+# Rarefied richness (q0) at plot level
+q0_m_plot <-
+  vegan::rarefy(comm_plot_mat, sample = m_plot) |>
+  as.numeric()
+
+plot_results <-
+  bee_plot |>
+  select(region, site, plotID, plot) |>
+  mutate(
+    n_total = n_total_plot,
+    q0_m = q0_m_plot
+  )
+
+plot_results
+```
+
+
+
+
+# Rarefy on site-scale
+```{r Compute toals and common rarefaction size}
+# Species-only site matrix (you already created comm_site)
+# Ensure matrix format for vegan/iNEXT
+comm_site_mat <- comm_site |> as.matrix()
+
+# Total individuals per site (8 values)
+n_total <- comm_site_mat |> rowSums()
+
+# Common rarefaction size = min total across sites
+m <- min(n_total)
+message("Common rarefaction size m = ", m)
+print(n_total)
+```
+```{r Rarefied q0 computation}
+q0_m <-
+  comm_site_mat |>
+  vegan::rarefy(sample = m) |>
+  as.numeric()
+
+
+site_results <-
+  bee_site |>
+  select(region, site) |>
+  mutate(
+    n_total = n_total,
+    q0_m = q0_m
+  )
+
+site_results
+```
+```{r Model q0}
+
+m_q0 <- glmmTMB(q0_m ~ site + (1 | region), data = site_results, family = nbinom2)
+summary(m_q0)
+```
+```{r}
+plot(m_q0)
+qqnorm(resid(m_q0)); qqline(resid(m_q0))
+
+plot_q0 <-
+  site_results |>
+  mutate(site = factor(site, levels = c("control", "focal"))) |>
+  ggplot(aes(x = site, y = q0_m, color = site, group = region)) +
+  geom_point(size = 3) +
+  geom_line(alpha = 0.7) +
+  theme_minimal() +
+  labs(
+    x = "Type de site",
+    y = "q0 (richesse rarefiée)",
+    title = "Comparaison de la richesse rarefiée (q0) entre sites"
+  ) +
+  theme(legend.position = "none")
+
+plot_q0
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Bee ab model prep:
+```{r bee ab model prep: overdispersion test, response data distribution}
+#baseline poisson model
+m_pois <- glmer(
+  bee_abundance ~ site + (1 | region) + (1 | plotID),
+  data = data_all_scaled,
+  family = poisson
+)
+
+summary(m_pois)
+
+#test for overdispersion
+overdisp_fun <- function(model) {
+  rdf <- df.residual(model)
+  rp <- residuals(model, type = "pearson")
+  Pearson.chisq <- sum(rp^2)
+  ratio <- Pearson.chisq / rdf
+  pval <- pchisq(Pearson.chisq, df = rdf, lower.tail = FALSE)
+  c(chisq = Pearson.chisq, ratio = ratio, rdf = rdf, p = pval)
+}
+
+overdisp_fun(m_pois) #clear overdispersion
+
+#negatvie binomial modlel
+m_nb <- glmmTMB(
+  bee_abundance ~ site + (1 | region) + (1 | plotID),
+  family = nbinom2,   # Negative binomial
+  data = data_all_scaled)
+
+summary(m_nb)
+
+# Check diagnostics
+sim_nb <- simulateResiduals(m_nb, n = 1000)
+plot(sim_nb)
+testDispersion(sim_nb) # no overdispersion with negbin
+testZeroInflation(sim_nb) # no zero inflation
+
+#negative binomial is the distribution used from now on
+```
+
+```{r bee ab model prep: test for collinearity among habitat explanatory variables}
+# List of numeric environmental variables
+env_vars <- c("visit", "bareground", "vegcover", "vegheight", "herb", "woody",
+              "sand", "gravel", "cobble", "stone", "wood", "soil", "flat",
+              "sloped", "steep", "canopy", "canopy_hp", "branchpile",
+              "stonepile", "patchiness", "standingdeadwood", "lyingdeadwood",
+              "hill_q0", "hill_q1", "hill_q2")
+#visit and patchiness, although included in coming models as ordinal, are treated as numeric for Spearman computation
+
+# Compute Spearman correlation matrix
+cor_matrix <- cor(
+  data_all_scaled[env_vars],
+  method = "spearman",
+  use = "pairwise.complete.obs")
+
+# Identify pairs with |correlation| > 0.7
+high_corr <- which(abs(cor_matrix) > 0.7 & abs(cor_matrix) <= 1, arr.ind = TRUE)
+
+# Create a data frame of correlated pairs
+correlated_pairs <- data.frame(
+  var1 = rownames(cor_matrix)[high_corr[, 1]],
+  var2 = colnames(cor_matrix)[high_corr[, 2]],
+  correlation = cor_matrix[high_corr]
+)
+
+# Remove duplicates (var1-var2 vs var2-var1)
+correlated_pairs[correlated_pairs$var1 < correlated_pairs$var2, ]
+
+# visualize correlation
+corrplot(
+  cor_matrix,
+  method = "color",
+  type = "upper",
+  tl.col = "black",
+  tl.srt = 45,
+  col = colorRampPalette(c("#2166AC", "white", "#B2182B"))(200),
+  addCoef.col = "black",
+  number.cex = 0.6
+)
+
+# New variable dataframe (merged covariates with spearman above 0.7)
+# bareground - vegcover -> bareground
+# herb - woody -> herb
+# flat - sloped -> sloped
+# hill_q0 - hill_q1 -> hill_q1
+
+# canopy_hp excluded as constant across visits
+env_vars <- c("bareground", "vegheight", "herb", "sand", "gravel", "cobble",
+              "stone", "wood", "soil", "sloped", "steep", "canopy",
+              "branchpile", "stonepile", "standingdeadwood", "lyingdeadwood",
+              "hill_q1", "hill_q2")
+```
+
+Can we include site as explanatory variable in a multivariate model? - No, this chunk shows that too many of the habitat variables confound with site, and should therefore not be included in the same multivariate model.
+```{r bee ab model prep: diagnostic site vs habitat covariates}
+num_vars <- c("visit", "bareground", "vegcover", "vegheight", "herb", "woody",
+              "sand", "gravel", "cobble", "stone", "wood", "soil", "flat",
+              "sloped", "steep", "canopy", "canopy_hp", "branchpile",
+              "stonepile", "patchiness", "standingdeadwood", "lyingdeadwood",
+              "hill_q1", "hill_q2")
+
+site_tests <- lapply(num_vars, function(v) {
+  wt <- wilcox.test(data_all_scaled[[v]] ~ data_all_scaled$site)
+  data.frame(
+    variable = v,
+    W = wt$statistic,
+    p_value = wt$p.value
+  )
+})
+
+site_tests <- do.call(rbind, site_tests)
+
+site_tests$p_adj <- p.adjust(site_tests$p_value, method = "BH")
+
+# these variables confound with site and cannot be included in a multivariate model together
+confounded_vars <- site_tests |>
+  subset(p_adj < 0.05) |>
+  arrange(p_adj)
+
+confounded_vars$variable
+
+# these variables do not confound with site and could be included in a multivariate model together
+independent_vars <- site_tests |>
+  subset(p_adj >= 0.05)
+
+independent_vars$variable
+```
+
+Run a univariate model to see the effect of site on bee abundance.
+```{r bee ab model: site}
+NBab1 <- glmmTMB(
+  bee_abundance ~ site + (1 | region) + (1|plotID),
+  family = nbinom2,   # Negative binomial
+  data = data_all_scaled)
+
+summary(NBab1)
+
+# Get predicted values for 'site'
+pred_site <- ggpredict(NBab1, terms = "site")
+
+# Plot
+plot(pred_site) +
+  ggtitle("Predicted Bee Abundance by Site") +
+  ylab("Predicted Abundance") +
+  xlab("Site")
+
+#add raw data jitter
+
+site_cols <- c(
+  "focal" = "#6B7C93",
+  "control"   = "#D08C60"
+)
+
+ggplot() +
+  # raw data: barely there
+  geom_jitter(
+    data = data_all_scaled,
+    aes(x = site, y = bee_abundance, colour = site),
+    width = 0.12,
+    alpha = 0.15,
+    size = 1.6,
+    show.legend = FALSE
+  ) +
+  # predicted means
+  geom_point(
+    data = pred_site,
+    aes(x = x, y = predicted, colour = x),
+    size = 4
+  ) +
+  # confidence intervals
+  geom_errorbar(
+    data = pred_site,
+    aes(x = x, ymin = conf.low, ymax = conf.high, colour = x),
+    width = 0.12,
+    linewidth = 1
+  ) +
+  scale_colour_manual(values = site_cols) +
+  labs(
+    x = NULL,
+    y = "Predicted bee abundance",
+    title = "Predicted bee abundance by site, raw data included"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold"),
+    axis.title.y = element_text(margin = margin(r = 8))
+  )
+```
+
+Run univariate models for ordinal covariates
+```{r bee ab model: univarite models for ordinal variables}
+# patchiness
+p_ord <- glmmTMB(bee_abundance ~ patchiness_ord + (1 | region) + (1|plotID),
+                 family = nbinom2, data = data_all_scaled)
+summary(p_ord)
+
+#visit
+v_ord <- glmmTMB(bee_abundance ~ visit_ord + (1 | region) + (1|plotID),
+                 family = nbinom2, data = data_all_scaled)
+summary(v_ord)
+
+
+#plot 
+pred <- ggpredict(p_ord, terms = "patchiness_ord")
+ggplot(pred, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  theme_minimal() +
+  labs(title = "Effect of Patchiness (Ordinal) on Bee Abundance",
+       x = "Patchiness Level", y = "Predicted Abundance")
+
+
+pred <- ggpredict(v_ord, terms = "visit_ord")
+ggplot(pred, aes(x = x, y = predicted)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), width = 0.2) +
+  theme_minimal() +
+  labs(title = "Effect of visit (Ordinal) on Bee Abundance",
+       x = "Visit Number", y = "Predicted Abundance")
+
+```
+
+Try interactive model between site * visit 
+```{r}
+m_sv <- glmmTMB(bee_abundance ~ site*visit + (1 | region) + (1|plotID),
+                 family = nbinom2, data = data_all_scaled)
+summary(m_sv)
+
+pred_sv <- ggpredict(m_sv, terms = c("visit", "site"))
+
+
+plot(pred_sv) +
+  ggtitle("Predicted Bee Abundance across Visits by Site") +
+  xlab("Visit") +
+  ylab("Predicted abundance (Negative Binomial)") +
+  theme_minimal(base_size = 13)
+
+# Custom color palette
+site_cols <- c("focal" = "#6B7C93", "control" = "#D08C60")
+
+ggplot() +
+  # Raw data
+  geom_jitter(
+    data = data_all_scaled,
+    aes(x = visit, y = bee_abundance, colour = site),
+    width = 0.2, alpha = 0.2, size = 1.8
+  ) +
+  # Predicted values
+  geom_line(
+    data = pred_sv,
+    aes(x = x, y = predicted, colour = group),
+    size = 1.2
+  ) +
+  # Confidence intervals
+  geom_ribbon(
+    data = pred_sv,
+    aes(x = x, ymin = conf.low, ymax = conf.high, fill = group),
+    alpha = 0.2,
+    inherit.aes = FALSE
+  ) +
+  scale_colour_manual(values = site_cols) +
+  scale_fill_manual(values = site_cols) +
+  labs(
+    x = "Visit (ordinal)",
+    y = "Predicted Bee Abundance",
+    title = "Predicted Bee Abundance Across Visits by Site"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none")
+```
+
+
+Run univariate models for numeric covariates
+```{r bee ab model: run univariate model for numeric variabels}
+model_um_abundance <- tibble(
+  Variable = env_vars,
+  Model = map(env_vars, ~ glmmTMB(
+    as.formula(paste("bee_abundance ~ `", .x, "` + (1 | region) + (1|plotID)", sep = "")),
+    family = nbinom2,
+    data = data_all_scaled
+  ))
+)
+```
+
+
+```{r bee ab model: plot univarite model predictions}
+model_df <- model_um_abundance
+
+# Extract model stats
+model_df <- model_df |>
+  mutate(
+    Summary = map(Model, ~ summary(.x)$coefficients$cond),
+    CoefName = map_chr(Summary, ~ setdiff(rownames(.x), "(Intercept)")),
+    Estimate = map_dbl(Summary, ~ .x[setdiff(rownames(.x), "(Intercept)"), "Estimate"]),
+    StdError = map_dbl(Summary, ~ .x[setdiff(rownames(.x), "(Intercept)"), "Std. Error"]),
+    p_value = map_dbl(Summary, ~ .x[setdiff(rownames(.x), "(Intercept)"), "Pr(>|z|)"]),
+    CI_lower = Estimate - 1.96 * StdError,
+    CI_upper = Estimate + 1.96 * StdError,
+    AIC = map_dbl(Model, AIC)
+  )
+
+print(model_df)
+
+# Plot all model output estimates, mark significant ones in different color
+# Sort by AIC for convenience
+model_df_am <- model_df |> arrange(AIC)
+
+# Add significance flag
+model_df_am <- model_df_am |>
+  mutate(Significant = ifelse(p_value < 0.05, "Significant", "Not Significant"))
+
+# Forest plot with color by significance
+ggplot(model_df_am, aes(x = reorder(Variable, Estimate), y = Estimate, color = Significant)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper), width = 0.2) +
+  coord_flip() +
+  theme_minimal() +
+  ylab("Effect Size (Estimate)") +
+  xlab("Environmental Variable") +
+  ggtitle("Univariate Effects on Bee Abundance") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray") +
+  scale_color_manual(values = c("Significant" = "#D55E00", "Not Significant" = "gray"))
+
+
+# plot significant univariate models
+# Filter significant models
+significant_df <- model_df |>
+  filter(!is.na(p_value), p_value < 0.05) |>
+  arrange(AIC)
+
+# View summary table
+print(significant_df |> select(Variable, AIC, Estimate, CI_lower, CI_upper, p_value))
+
+# Plot predicted effects using ggpredict
+plots <- map2(significant_df$Model, significant_df$Variable, ~ {
+  pred <- ggpredict(.x, terms = .y, bias_correction = TRUE, transform = TRUE)
+  ggplot(pred, aes(x = x, y = predicted)) +
+    geom_line() +
+    geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+    theme_minimal() +
+    labs(title = paste("Effect of", .y, "on Bee Abundance"),
+         x = .y, y = "Predicted Abundance")
+})
+
+ggplot(significant_df, aes(x = reorder(Variable, Estimate), y = Estimate)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper), width = 0.2) +
+  coord_flip() +
+  theme_minimal() +
+  ylab("Effect Size (Estimate)") +
+  xlab("Environmental Variable") +
+  ggtitle("Significant Predictors of Bee Abundance (p < 0.05)") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray")
+```
+
+
+Build multivariate model for bee abundance
+```{r}
+AB_glmm <- glmmTMB(
+  bee_abundance ~ hill_q1 + hill_q2 + sand + soil + vegheight + patchiness_ord +
+    (1 | region) + (1|plotID),
+  family = nbinom2,
+  data = data_all_scaled
+)
+print(summary(AB_glmm))
+
+vif(lm(bee_abundance ~ hill_q1 + hill_q2 + sand + soil + vegheight + patchiness_ord,
+       data = data_all_scaled))
+#all values below 3 - no multicollinearity 
+
+```
+
+```{r}
+
+# Extract tidy summary
+coef_df <- broom.mixed::tidy(AB_glmm, conf.int = TRUE)
+
+# Filter only fixed effects
+coef_df <- coef_df |>
+  filter(effect == "fixed") |>
+  mutate(significant = ifelse(conf.low * conf.high > 0, "Significant", "Not Significant"))
+
+
+
+# Plot
+ggplot(coef_df, aes(x = estimate, y = term, color = significant)) +
+  geom_point(size = 3) +
+  geom_errorbarh(aes(xmin = conf.low, xmax = conf.high), height = 0.2) +
+  scale_color_manual(values = c("Significant" = "orange", "Not Significant" = "gray")) +
+  theme_minimal() +
+  labs(title = "Falcon Plot of GLMM Effects",
+       x = "Estimate (with 95% CI)",
+       y = "Predictor")
+
+```
+
+
+```{r}
+AB_glmm <- glmmTMB(
+  bee_abundance ~ site + hill_q1 + hill_q2 + sloped + sand + patchiness +
+    (1 | region/site/plotID),
+  family = nbinom2,
+  data = data_all_scaled
+)
+print(summary(AB_glmm))
+
+```
+
+
+
+
+
+
+Modelling bee richness
+
+
+Richness modelling - test for overdispersion / zero inflation
+```{r bee models richness}
+#baseline poisson model
+m_pois <- glmer(
+  bee_richness ~ site + (1 | region/site/plotID), 
+  data = bee_data,
+  family = poisson
+)
+
+summary(m_pois)
+
+#test for overdispersion
+overdisp_fun <- function(model) {
+  rdf <- df.residual(model)
+  rp <- residuals(model, type = "pearson")
+  Pearson.chisq <- sum(rp^2)
+  ratio <- Pearson.chisq / rdf
+  pval <- pchisq(Pearson.chisq, df = rdf, lower.tail = FALSE)
+  c(chisq = Pearson.chisq, ratio = ratio, rdf = rdf, p = pval)
+}
+
+overdisp_fun(m_pois) #clear overdispersion
+
+#negatvie binomial modlel
+m_nb <- glmmTMB(
+  bee_richness ~ site + (1 | region/site/plotID),
+  family = nbinom2,   # Negative binomial
+  data = bee_data)
+
+# Check diagnostics
+sim_nb <- simulateResiduals(m_nb, n = 1000)
+plot(sim_nb)
+testDispersion(sim_nb) # no overdispersion with negbin
+testZeroInflation(sim_nb) # no zero inflation
+
+```
+```{r}
+# Run univariate models for bee richness
+
+env_vars <- c("bareground", "vegheight", "herb", "sand",
+              "gravel", "cobble", "stone", "wood", "soil", "sloped",
+              "steep", "canopy", "branchpile",
+              "stonepile", "patchiness", "standingdeadwood", "lyingdeadwood", "hill_q0", "hill_q1", "hill_q2")
+
+bee_um_richness <- tibble(
+  Variable = env_vars,
+  Model = map(env_vars, ~ glmmTMB(
+    as.formula(paste("bee_richness ~ `", .x, "` + (1 | region/site/plotID)", sep = "")),
+    family = nbinom2,  # still appropriate if richness is count data
+    data = data_all_scaled
+  ))
+)
+```
+Due to warning: Model convergence problem; non-positive-definite Hessian matrix - run diagnostics
+```{r}
+# Check convergence for each model
+convergence_flags <- map_lgl(bee_um_richness$Model, ~ {
+  any(grepl("Model convergence problem", .x$fit$optinfo$conv$lme4$messages))
+})
+
+# Combine with variable names
+tibble(Variable = bee_um_richness$Variable, ConvergenceIssue = convergence_flags)
+```
+models themselves do not have convergence issues, we can proceed. 
+(possible explanation: glmmTMB often issues a temporary warning if the Hessian is singular at some iteration, even if the optimizer later resolves it.)
+
+
+```{r}
+model_df_richness <- bee_um_richness
+
+# Extract model stats
+model_df_richness <- model_df_richness |>
+  mutate(
+    Summary = map(Model, ~ summary(.x)$coefficients$cond),
+    CoefName = map_chr(Summary, ~ setdiff(rownames(.x), "(Intercept)")),
+    Estimate = map_dbl(Summary, ~ .x[setdiff(rownames(.x), "(Intercept)"), "Estimate"]),
+    StdError = map_dbl(Summary, ~ .x[setdiff(rownames(.x), "(Intercept)"), "Std. Error"]),
+    p_value = map_dbl(Summary, ~ .x[setdiff(rownames(.x), "(Intercept)"), "Pr(>|z|)"]),
+    CI_lower = Estimate - 1.96 * StdError,
+    CI_upper = Estimate + 1.96 * StdError,
+    AIC = map_dbl(Model, AIC)
+  )
+
+# Filter significant models
+significant_df_richness <- model_df_richness |>
+  filter(!is.na(p_value), p_value < 0.05) |>
+  arrange(AIC)
+
+# View summary table
+print(significant_df_richness |>
+        select(Variable, AIC, Estimate, CI_lower, CI_upper, p_value))
+
+# Plot predicted effects using ggpredict
+plots_richness <- map2(significant_df_richness$Model,
+                       significant_df_richness$Variable, ~ {
+  pred <- ggpredict(.x, terms = .y, bias_correction = TRUE, transform = TRUE)
+  ggplot(pred, aes(x = x, y = predicted)) +
+    geom_line() +
+    geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+    theme_minimal() +
+    labs(title = paste("Effect of", .y, "on Bee Richness"),
+         x = .y, y = "Predicted Richness")
+})
+
+plots_richness
+
+
+ggplot(significant_df_richness,
+       aes(x = reorder(Variable, Estimate), y = Estimate)) +
+  geom_point(size = 3, color = "#D55E00") +
+  geom_errorbar(
+    aes(ymin = CI_lower, ymax = CI_upper),
+    width = 0.2,
+    color = "#D55E00") +
+  coord_flip() +
+  theme_minimal() +
+  ylab("Effect Size (Estimate)") +
+  xlab("Environmental Variable") +
+  ggtitle("Significant Predictors of Bee Richness (p < 0.05)") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray")
+```
+
+
+```{r}
+# Forest plot for all models
+model_df_richness <- model_df_richness |>
+  arrange(AIC) |>
+  mutate(Significant = ifelse(p_value < 0.05, "Significant", "Not Significant"))
+
+ggplot(model_df_richness,
+       aes(x = reorder(Variable, Estimate),
+           y = Estimate, color = Significant)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = CI_lower, ymax = CI_upper), width = 0.2) +
+  coord_flip() +
+  theme_minimal() +
+  ylab("Effect Size (Estimate)") +
+  xlab("Environmental Variable") +
+  ggtitle("Univariate Effects on Bee Richness") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray") +
+  scale_color_manual(values = c("Significant" = "#D55E00",
+                                "Not Significant" = "gray"))
+```
+
+
+
+
+
+```{r visit and site interactive model}
+
+m_nb <- glmmTMB(bee_abundance ~ site * visit + (1 | region) + (1 | plotID),
+                family = nbinom2, data = data_all_scaled)
+
+# Newdata grid over site × visit (months 1..5)
+newdata <- expand.grid(
+  site  = levels(data_all_scaled$site),
+  visit = sort(unique(data_all_scaled$visit))
+)
+
+# Marginal predictions on response scale (exclude random effects)
+pred <- predict(m_nb, newdata = newdata,
+                type = "response",
+                se.fit = TRUE,
+                re.form = NA)
+
+newdata <- newdata |>
+  mutate(
+    fit = as.numeric(pred$fit),
+    se  = as.numeric(pred$se.fit),
+    lwr = pmax(fit - 1.96 * se, 0),
+    upr = fit + 1.96 * se
+  )
+
+# Plot: raw points (transparent) + predicted line + 95% CI ribbon
+p <- ggplot() +
+  geom_point(
+    data = data_all_scaled,
+    aes(x = visit, y = bee_abundance, color = site),
+    alpha = 0.25, size = 2,
+    position = position_jitter(width = 0.05, height = 0)
+  ) +
+  geom_ribbon(
+    data = newdata,
+    aes(x = visit, ymin = lwr, ymax = upr, fill = site, group = site),
+    alpha = 0.20
+  ) +
+  geom_line(
+    data = newdata,
+    aes(x = visit, y = fit, color = site, group = site),
+    linewidth = 1.2
+  ) +
+  scale_color_brewer(palette = "Dark2") +
+  scale_fill_brewer(palette = "Dark2") +
+  labs(
+    x = "Visit (month)",
+    y = "Predicted bee abundance (Negative Binomial, nbinom2)",
+    color = "Site",
+    fill  = "Site",
+    title = "Bee abundance: raw counts with glmmTMB predictions and 95% CI"
+  ) +
+  theme_minimal(base_size = 13)
+
+print(p)
+
+```
+

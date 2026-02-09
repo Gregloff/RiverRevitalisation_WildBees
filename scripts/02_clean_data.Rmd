@@ -1,0 +1,438 @@
+---
+title: "clean_data"
+output: html_document
+---
+```{r}
+library(dplyr)
+library(readr)
+library(rprojroot)
+library(tidyr)
+library(vegan)
+```
+
+```{r Load data}
+# Compact helper function to read raw CSVs
+read_raw <- function(file) {
+  read.csv(file.path("..", "data", "raw", file), stringsAsFactors = FALSE)
+}
+
+# Example usage
+beedata      <- read_raw("beedata.csv")
+mappingdata  <- read_raw("mappingdata.csv")
+canopyhp     <- read_raw("canopyhp.csv")
+```
+
+Create linkable datasets through plotID and metadata dataframe
+```{r}
+#add column with plotID
+beedata <- beedata |>
+  mutate(plotID = sub("\\.[^.]+(?=\\.[^.]+$)", "", surveyID, perl = TRUE))
+
+mappingdata <- mappingdata |>
+  mutate(plotID = sub("\\.[^.]+(?=\\.[^.]+$)", "", surveyID, perl = TRUE))
+
+metadata <- mappingdata |>
+  select(surveyID, plotID, site, region, visit, plot) |>
+  distinct()
+```
+
+# Mapping data (excluding plants)
+Prepare mapping data (without plants)
+```{r mapp_data, habplot, habsite prep}
+mapp_data <- mappingdata
+
+# add canopy hp data
+mapp_data <- mapp_data |>
+  left_join(canopyhp |> select(plotID, canopy_hp), by = "plotID")
+
+# Subset the data frame to include plot scale mapping data
+# (not including plant data)
+columns_plot <- c("plotID", "plot", "site", "region", "Xcoord", "Ycoord",
+                  "Zcoord", "canton", "date", "visit", "surveyID", "observer",
+                  "municipality", "bareground", "vegcover", "vegheight", "herb",
+                  "woody", "sand", "gravel", "cobble", "stone", "wood", "soil",
+                  "flat", "sloped", "steep", "canopy", "canopy_hp",
+                  "standingdeadwood", "lyingdeadwood", "branchpile",
+                  "stonepile", "patchiness")
+
+habplot_data <- mapp_data[, columns_plot]
+
+# Subset the data frame to include site scale mapping data
+# (including site scale plant data)
+columns_site <- c("plotID", "plot", "site", "region", "Xcoord", "Ycoord",
+                  "Zcoord", "canton", "date", "visit", "surveyID", "observer",
+                  "municipality", "sitebareground", "sitevegcover",
+                  "sitevegheight", "siteherb", "sitewoody", "sitesand",
+                  "sitegravel", "sitecobble", "sitestone", "sitesoil",
+                  "siteflat", "sitesloped", "sitesteep", "sitecanopy",
+                  "sitepatchiness", "sitecornis", "sitecomment", "siteacer",
+                  "sitecornus", "sitecrataegus", "siteeuonymus", "sitefrangula",
+                  "sitefraxinus", "ligustrum", "sitelonicera", "siteprunus",
+                  "siterosa", "sitesalix", "sitesambucus", "siteviburnum",
+                  "plotID")
+
+# Subset the data frame
+habsite_data <- mapp_data[, columns_site]
+
+
+# calculate proportion of each bareground variable to full plot area
+cols <- c("sand", "gravel", "cobble", "stone", "wood", "soil")
+mapp_data[cols] <- mapp_data[cols] * mapp_data$bareground / 100
+```
+
+Prepare sampling covariate data
+```{r sampling covariates data prep}
+# Subset the data frame to include sampling covariates
+columns_sampling <- c("site", "region", "visit", "plotID", "surveyID", "date",
+                      "site", "temp", "wind", "cloud", "shade", "distwater",
+                      "timestart", "timestop")
+
+samplcov_data <- mapp_data[, columns_sampling]
+```
+
+# Plant data
+Prepare plant genus matrix
+```{r plant data prep}
+plant_data <- mapp_data[, which(names(mapp_data) == "achillea")
+                        :which(names(mapp_data) == "vicia")]
+
+# replace NA with 0
+plant_data[is.na(plant_data)] <- 0
+
+# Calculate plant richness: number of genera present per row
+plant_data$richness <- rowSums(plant_data > 0, na.rm = TRUE)
+
+# Calculate relative abundance: sum of all genus abundances per row
+plant_data$relabundance <- rowSums(plant_data, na.rm = TRUE)
+
+#Calculate the avg. relative abundance per plant genus per plot
+plant_data$avgrelabundance <- plant_data$relabundance / plant_data$richness
+
+plant_data$site <- mapp_data$site
+
+plant_data$visit <- mapp_data$visit
+
+plant_data$region <- mapp_data$region
+
+plant_data$plotID <- mapp_data$plotID
+
+plant_data$surveyID <- mapp_data$surveyID
+```
+
+```{r plant diversity indices}
+# Hill number for q = 0 (species richness)
+plant_data$hill_q0 <- rowSums(plant_data[1:131] > 0, na.rm = TRUE)
+
+# Hill number for q = 1 (exponential of Shannon)
+plant_data$hill_q1 <- exp(diversity(plant_data[1:131], index = "shannon"))
+
+# Hill number for q = 2 (inverse Simpson)
+plant_data$hill_q2 <- 1 / diversity(plant_data[1:131], index = "invsimpson")
+
+# Current plant_data has metadata at the end; let's reorder
+plant_data <- plant_data[, c("site", "region", "visit", "plotID",
+                             "surveyID", "hill_q0", "hill_q1", "hill_q2",
+                             setdiff(names(plant_data),
+                                     c("site", "visit", "plotID", "region",
+                                       "surveyID", "hill_q0", "hill_q1",
+                                       "hill_q2")))]
+```
+
+#Bee data
+Prepare bee data
+```{r bee data prep}
+# remove extra plots (plots #13) and Wasps
+beedata <- beedata[!(beedata$plot == 13 | beedata$Gattung == "Wasp"), ]
+
+# Combine genus and species into a single species name
+beedata <- beedata |>
+  mutate(bee_species = paste(Gattung, Art, sep = " "))
+
+
+# Count number of individuals per species per surveyID
+bee_abundance_matrix <- beedata |>
+  group_by(surveyID, bee_species) |>
+  summarise(bee_abundance = n(), .groups = "drop") |>
+  pivot_wider(names_from = bee_species,
+              values_from = bee_abundance, values_fill = 0)
+
+# Reorder columns: keep 'surveyID' first, sort the rest alphabetically
+bee_abundance_matrix <- bee_abundance_matrix[, c(
+  "surveyID",
+  sort(setdiff(names(bee_abundance_matrix), "surveyID"))
+)]
+
+# check if right number of rows
+nrow(beedata) # 1871 bees total
+sum(bee_abundance_matrix[, -1])
+
+# Merge metadata with species abundance matrix
+bee_data <- left_join(metadata, bee_abundance_matrix, by = "surveyID")
+
+str(bee_data)
+
+#add field ID morphospecies of Bombus and Xylocopa (only for abundance data
+bee_data <- left_join(bee_data, mapp_data |>
+                        select(surveyID, fieldIDsum), by = "surveyID")
+
+#Calculate bee species richness per plot
+bee_data$bee_richness <- rowSums(
+  bee_data[, !(names(bee_data) %in%
+                 c("surveyID", "plotID", "site", "region",
+                   "visit", "plot", "fieldIDsum"))] > 0, na.rm = TRUE)
+
+# Calculate total abundance by summing all species columns
+# (not including fieldID Bombus / Xylocopa)
+bee_data$bee_abundance_nofieldID <- rowSums(
+  bee_data[, !(names(bee_data) %in%
+                 c("surveyID", "plotID", "site", "region", "visit", "plot",
+                   "fieldIDsum", "bee_richness"))], na.rm = TRUE)
+
+# Calculate total abundance by summing all species columns (including FieldID)
+bee_data$bee_abundance <- rowSums(
+  bee_data[, !(names(bee_data) %in%
+                 c("surveyID", "plotID", "site", "region", "visit", "plot",
+                   "bee_abundance_nofieldID", "bee_richness"))], na.rm = TRUE)
+
+# RL Abundance per survey (drop NA RLstatus)
+rl_abundance <- beedata |>
+  filter(!is.na(RLstatus)) |>
+  group_by(surveyID, RLstatus) |>
+  summarise(n = n(), .groups = "drop") |>
+  pivot_wider(
+    names_from = RLstatus,
+    values_from = n,
+    values_fill = 0,
+    names_prefix = "RLabund_"
+  )
+
+# RL Richness per survey (drop NA RLstatus)
+rl_richness <- beedata |>
+  filter(!is.na(RLstatus)) |>
+  mutate(bee_species = paste(Gattung, Art)) |>
+  distinct(surveyID, RLstatus, bee_species) |>
+  count(surveyID, RLstatus) |>
+  pivot_wider(
+    names_from = RLstatus,
+    values_from = n,
+    values_fill = 0,
+    names_prefix = "RLrich_"
+  )
+
+# Merge RL metrics into bee_data
+bee_data <- bee_data |>
+  left_join(rl_abundance, by = "surveyID") |>
+  left_join(rl_richness, by = "surveyID")
+
+# Ensure threatened columns exist
+for (col in c("RLrich_VU", "RLrich_EN", "RLrich_CR")) {
+  if (!col %in% names(bee_data)) bee_data[[col]] <- 0
+}
+for (col in c("RLabund_VU", "RLabund_EN", "RLabund_CR")) {
+  if (!col %in% names(bee_data)) bee_data[[col]] <- 0
+}
+
+# Add threatened and total richness/abundance
+bee_data <- bee_data |>
+  mutate(
+    RLrich_threatened = RLrich_VU + RLrich_EN + RLrich_CR,
+    RLabund_threatened = RLabund_VU + RLabund_EN + RLabund_CR,
+    RLrich_total = rowSums(across(starts_with("RLrich_")), na.rm = TRUE),
+    RLabund_total = rowSums(across(starts_with("RLabund_")), na.rm = TRUE)
+  )
+
+# turn NA into 0 in species matrix
+bee_data[is.na(bee_data)] <- 0
+```
+
+```{r handle aggregates}
+
+# Define species within aggregates
+halictus_species <- c("Halictus simplex",
+                      "Halictus eurygnathus",
+                      "Halictus langobardicus")
+
+bombus_species <- c("Bombus terrestris",
+                    "Bombus cryptarum")
+
+# Define aggregate column names
+halictus_aggr <- "Halictus simplex aggr."
+bombus_aggr <- "Bombus terrestris aggr."
+
+# Loop through rows and print affected ones
+for (i in 1:nrow(bee_data)) {
+  row <- bee_data[i, ]
+  halictus_present <- any(row[halictus_species] > 0)
+  halictus_aggr_present <- row[[halictus_aggr]] > 0
+  bombus_present <- any(row[bombus_species] > 0)
+  bombus_aggr_present <- row[[bombus_aggr]] > 0
+  if ((halictus_present && halictus_aggr_present) ||
+      (bombus_present && bombus_aggr_present)) {
+    cat("\n--- Row", i, "surveyID:", row$surveyID, "---\n")
+    # Print Halictus species and aggregate if relevant
+    if (halictus_present & halictus_aggr_present) {
+      cat("Halictus species present:\n")
+      print(row[halictus_species])
+      cat("Halictus aggregate present:\n")
+      print(row[halictus_aggr])
+    }
+    # Print Bombus species and aggregate if relevant
+    if (bombus_present & bombus_aggr_present) {
+      cat("Bombus species present:\n")
+      print(row[bombus_species])
+      cat("Bombus aggregate present:\n")
+      print(row[bombus_aggr])
+    }
+  }
+}
+
+sum(bee_data$`Halictus simplex aggr.` > 0)
+
+sum(bee_data$`Bombus terrestris aggr.` > 0)
+
+
+# merge all species within the aggregates 
+# Collapse Halictus
+bee_data[[halictus_aggr]] <- bee_data[[halictus_aggr]] +
+  rowSums(bee_data[halictus_species], na.rm = TRUE)
+bee_data[halictus_species] <- NULL   # remove species-level columns
+
+# Collapse Bombus
+bee_data[[bombus_aggr]] <- bee_data[[bombus_aggr]] +
+  rowSums(bee_data[bombus_species], na.rm = TRUE)
+bee_data[bombus_species] <- NULL     # remove species-level columns
+
+```
+
+
+should we limit the count of each species per plot above 10, 15, 20?
+
+```{r exploring bee data}
+  # Convert to long format
+  bee_abundance_long <- bee_abundance_matrix |>
+    pivot_longer(cols = -surveyID, names_to = "species", values_to = "abundance")
+  
+  bee_abundance_long |> filter(abundance > 10)
+  
+  # Filter for abundance > 15
+  bee_abundance_long |> filter(abundance > 15)
+  
+  # Filter for abundance > 20
+  bee_abundance_long |> filter(abundance > 20)
+```
+
+# Model data
+Create full dataset for modelling
+```{r bee model data prep: data_all prep}
+data_all <- merge(habplot_data, plant_data, by = "surveyID")
+data_all <- merge(data_all, samplcov_data, by = "surveyID")
+data_all <- merge(data_all, bee_data, by = "surveyID")
+
+
+# Remove duplicated columns manually
+data_all <- data_all |>
+  select(-matches("\\.x$|\\.y$"))  # removes columns ending in .x or .y
+
+# Add plot info from mapp_data
+mapp_subset <- mapp_data |>
+  select(surveyID, site, region, plot, plotID, visit)
+
+# Join with data_all by surveyID
+data_all <- left_join(mapp_subset, data_all, by = "surveyID")
+
+
+data_all <- data_all |>
+  mutate(
+    site   = factor(site, levels = c("control", "focal")),
+    region = factor(region),
+    plotID = factor(plotID)
+  )
+
+
+View(data_all)
+```
+
+Scale data 
+```{r bee model data prep: scale data}
+data_all_scaled <- data_all
+
+# Identify continuous predictors
+scale_vars <- c("bareground", "vegheight", "herb", "sand",
+              "gravel", "cobble", "stone", "wood", "soil", "sloped",
+              "steep", "canopy", "branchpile",
+              "stonepile", "standingdeadwood", "lyingdeadwood", "hill_q0", "hill_q1", "hill_q2")
+
+# Scale them (center and scale)
+#data_all_scaled <- data_all_scaled |>
+#  mutate(across(all_of(scale_vars), ~ as.numeric(scale(.))))
+
+
+data_all_scaled <- data_all |>
+  mutate(across(all_of(scale_vars), scale)) 
+
+```
+scale patchiness and visit? no, they are ordinal variables
+
+```{r bee model data prep: handling non-numeric covariates}
+#creat ordinal patchiness and visit columns
+data_all_scaled <- data_all_scaled |>
+  mutate(patchiness_ord = ordered(patchiness, levels = c("0","1","2","3")), 
+         visit_ord = ordered(visit, levels = c("1","2","3","4","5")))
+```
+
+
+```{r bee model data prep: save model dataframe}
+saveRDS(data_all_scaled, file = "data_all_scaled.rds")
+```
+
+"We included random intercepts for region and plot to account for hierarchical structure and repeated measures. Region controls for large-scale environmental differences among study areas, while plot accounts for non-independence of repeated surveys within the same plot. The effect of site (focal vs control) was modeled as a fixed effect because it represents the main ecological contrast of interest and has only two levels, making it unsuitable as a random effect." - GPT formulation for use of random effect structure (1|region) + (1|plotID)
+
+Abundance modelling - test for overdispersion / zero inflation
+
+
+# Save clean dataframes
+```{r}
+
+# Save flat datasets as CSV
+save_csv <- function(df, name) {
+  # Find project root
+  root <- find_rstudio_root_file()
+  
+  # Create cleaned folder if missing
+  out_dir <- file.path(root, "data", "cleaned")
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+  
+  # Save as CSV
+  readr::write_csv(
+    as.data.frame(df),
+    file.path(out_dir, paste0(name, ".csv"))
+  )
+}
+
+# Save complex datasets (list-columns, modelling data) as RDS
+save_rds <- function(obj, name) {
+  root <- find_rstudio_root_file()
+  
+  out_dir <- file.path(root, "data", "cleaned")
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+  
+  saveRDS(
+    obj,
+    file.path(out_dir, paste0(name, ".rds"))
+  )
+}
+
+# Save core datasets (flat tables)
+save_csv(mapp_data, "mapp_data")
+save_csv(metadata, "metadata")
+save_csv(habplot_data, "habplot_data")
+save_csv(habsite_data, "habsite_data")
+save_csv(plant_data, "plant_data")
+save_csv(samplcov_data, "samplcov_data")
+save_csv(bee_data, "bee_data")
+save_csv(data_all, "data_all")
+
+# Save modelling dataset (contain list-columns)
+save_rds(data_all_scaled, "model_data_scaled")
+```
+
