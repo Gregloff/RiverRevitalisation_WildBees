@@ -3,3 +3,139 @@ title: "04_bee_rarefaction"
 output: html_document
 ---
 
+```{r}
+library(iNEXT)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+```
+
+Coverage‑based rarefaction (Chao et al. 2014, 2020) provides descriptive standardization, not inferential estimates, and its resulting diversity values do not follow the distributional assumptions required for GLMMs (e.g. Gotelli & Colwell 2001; Chao & Jost 2012). Rarefaction also collapses plot‑level replication, removes ecological variance, and prevents correct estimation of random effects.
+Because our sampling design includes spatial and hierarchical structure (multiple visits per plot; plots nested within sites; sites nested within regions), a GLMM using plot‑level richness/abundance with region and plotID as random effects is the statistically appropriate inferential framework.
+
+```{r Load data}
+# Compact helper function to read raw CSVs
+bee_data <- read.csv(file.path("..", "data", "cleaned", "bee_data.csv"),
+           stringsAsFactors = FALSE,
+           check.names = FALSE)
+```
+
+```{r}
+
+# ==============================
+# Identify metadata and species columns
+# ==============================
+meta_cols <- c(
+  "surveyID", "plotID", "site", "region", "visit", "plot",
+  "richness", "fieldIDsum",
+  "bee_abundance_nofieldID", "bee_abundance",
+  "RLabund_LC", "RLabund_NT", "RLabund_VU", "RLabund_EN", "RLabund_DD",
+  "RLrich_LC", "RLrich_NT", "RLrich_VU", "RLrich_EN", "RLrich_DD",
+  "RLrich_CR", "RLabund_CR",
+  "RLrich_threatened", "RLabund_threatened",
+  "RLrich_total", "RLabund_total"
+)
+
+species_cols <- setdiff(names(bee_data), meta_cols)
+
+# ==============================
+# Aggregate all plots per site
+# ==============================
+bee_site <- bee_data %>%
+  group_by(region, site) %>%
+  summarise(across(all_of(species_cols), sum), .groups = "drop")
+
+# ==============================
+# Prepare iNEXT input list
+# ==============================
+inext_list <- setNames(
+  lapply(seq_len(nrow(bee_site)), function(i) {
+    as.numeric(bee_site[i, species_cols])
+  }),
+  paste(bee_site$region, bee_site$site, sep = "_")
+)
+
+# ==============================
+# Run iNEXT for abundance data, species richness (q=0)
+# Coverage-based rarefaction + extrapolation
+# ==============================
+out_inext <- iNEXT(
+  inext_list,
+  q = 0,                  # species richness
+  datatype = "abundance",
+  endpoint = max(sapply(inext_list, sum)) * 2  # extrapolate to double sample size
+)
+```
+
+```{r}
+# ==============================
+# Extract coverage-based rarefaction data
+# ==============================
+df_plot <- fortify(out_inext, type = 3)  # type = 3 = sample coverage
+
+# Recover region and site labels
+df_plot <- df_plot %>%
+  separate(Assemblage, into = c("region", "site"), sep = "_")
+
+# ==============================
+# Plot coverage-based rarefaction curves
+# ==============================
+ggplot(df_plot, aes(x = x, y = y, color = site, fill = site)) +
+  geom_line(linewidth = 1.2) +
+  geom_ribbon(aes(ymin = y.lwr, ymax = y.upr), alpha = 0.25, color = NA) +
+  facet_wrap(~ region) +
+  labs(
+    x = "Sample coverage",
+    y = "Estimated species richness",
+    title = "Coverage-based rarefaction by site",
+    color = "Site",
+    fill = "Site"
+  ) +
+  scale_color_manual(values = c("focal" = "#2C7FB8", "control" = "#D95F02")) +
+  scale_fill_manual(values = c("focal" = "#A6C1E0", "control" = "#F1B0AD")) +
+  theme_bw(base_size = 12) +
+  theme(panel.grid = element_blank(),
+        plot.title = element_text(face = "bold"))
+
+```
+At low coverage, focal and control look similar → sampling effort not yet enough to reveal differences.
+At moderate coverage (0.6–0.9), focal curves are consistently above control → higher richness when standardized for completeness.
+Near full coverage, extrapolated ends diverge sharply, showing that focal assemblages have a larger “potential species pool”.
+gpt
+
+```{r}
+
+asymptotic_df <- out_inext$AsyEst %>%
+  # keep species richness (q = 0)
+  filter(Diversity %in% c("Species richness", "q = 0", "q=0")) %>%
+  # split "region_site" back into columns
+  separate(Assemblage, into = c("region", "site"), sep = "_", remove = FALSE) %>%
+  transmute(
+    region,
+    site,
+    Assemblage,
+    S_est = Estimator,
+    S_SE  = `s.e.`,
+    S_lwr = LCL %||% (Estimator - 1.96 * `s.e.`),
+    S_upr = UCL %||% (Estimator + 1.96 * `s.e.`)
+  )
+
+asymptotic_df
+
+
+bee_abundance_by_site <- bee_data %>%
+  group_by(region, site) %>%
+  summarise(
+    total_bee_abundance = sum(bee_abundance, na.rm = TRUE),
+    n_plots = n()
+  ) %>%
+  arrange(region, site)
+
+bee_abundance_by_site
+
+DataInfo(inext_list, datatype = "abundance")
+
+print(fortify(out_inext, type = 3))
+```
+

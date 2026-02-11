@@ -1729,6 +1729,36 @@ legend("bottomright", legend = c("Control", "Focal"),
        col = c(site_cols$focal, site_cols$control), lwd = 2)
 
 ```
+```{r export accumulation curve}
+
+tiff(file.path("output", "figures", "species_accum_control_vs_focal_600dpi.tiff"),
+     width = 3000, height = 2250, res = 600, compression = "lzw")
+
+ylim_range <- range(c(bee_accum_control$richness + bee_accum_control$sd,
+                      bee_accum_focal$richness   + bee_accum_focal$sd),
+                    na.rm = TRUE)
+
+plot(bee_accum_control,
+     xlab = "Number of surveys (plot visits)",
+     ylab = "Accumulated species richness",
+     main = "Species Accumulation: Control vs Focal Sites",
+     ci.type = "polygon",
+     col = site_cols$control,
+     lwd = 2,
+     ci.col = site_cols$control_light,
+     ylim = ylim_range)
+
+plot(bee_accum_focal, add = TRUE,
+     col = site_cols$focal,
+     ci.col = site_cols$focal_light,
+     ci.type = "polygon",
+     lwd = 2)
+
+legend("bottomright", legend = c("Control", "Focal"),
+       col = c(site_cols$control, site_cols$focal), lwd = 2, bty = "n")
+dev.off()
+
+```
 
 ```{r bee acucmulation curve by region}
 regions <- unique(bee_data$region)
@@ -1794,7 +1824,6 @@ ggplot(
     panel.grid = element_blank(),
     plot.title = element_text(face = "bold")
   )
-
 ```
 
 
@@ -2501,6 +2530,69 @@ tibble(Variable = bee_um_richness$Variable, ConvergenceIssue = convergence_flags
 ```
 models themselves do not have convergence issues, we can proceed. 
 (possible explanation: glmmTMB often issues a temporary warning if the Hessian is singular at some iteration, even if the optimizer later resolves it.)
+
+Run a univariate model to see the effect of site on bee richenss
+```{r bee ab model: site}
+NBri1 <- glmmTMB(
+  bee_richness ~ site + (1 | region) + (1|plotID),
+  family = nbinom2,   # Negative binomial
+  data = data_all_scaled)
+
+summary(NBri1)
+
+# Get predicted values for 'site'
+pred_site <- ggpredict(NBri1, terms = "site")
+
+# Plot
+plot(pred_site) +
+  ggtitle("Predicted Bee Abundance by Site") +
+  ylab("Predicted Abundance") +
+  xlab("Site")
+
+#add raw data jitter
+
+site_cols <- c(
+  "focal" = "#6B7C93",
+  "control"   = "#D08C60"
+)
+
+ggplot() +
+  # raw data: barely there
+  geom_jitter(
+    data = data_all_scaled,
+    aes(x = site, y = bee_abundance, colour = site),
+    width = 0.12,
+    alpha = 0.15,
+    size = 1.6,
+    show.legend = FALSE
+  ) +
+  # predicted means
+  geom_point(
+    data = pred_site,
+    aes(x = x, y = predicted, colour = x),
+    size = 4
+  ) +
+  # confidence intervals
+  geom_errorbar(
+    data = pred_site,
+    aes(x = x, ymin = conf.low, ymax = conf.high, colour = x),
+    width = 0.12,
+    linewidth = 1
+  ) +
+  scale_colour_manual(values = site_cols) +
+  labs(
+    x = NULL,
+    y = "Predicted bee richness",
+    title = "Predicted bee richness by site, raw data included"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold"),
+    axis.title.y = element_text(margin = margin(r = 8))
+  )
+```
 
 
 ```{r}

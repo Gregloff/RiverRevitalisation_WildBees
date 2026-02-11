@@ -396,10 +396,8 @@ Abundance modelling - test for overdispersion / zero inflation
 # Save flat datasets as CSV
 save_csv <- function(df, name) {
   # Find project root
-  root <- find_rstudio_root_file()
-  
-  # Create cleaned folder if missing
-  out_dir <- file.path(root, "data", "cleaned")
+   # Create cleaned folder if missing
+  out_dir <- file.path("..", "data", "cleaned")
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
   
   # Save as CSV
@@ -411,9 +409,7 @@ save_csv <- function(df, name) {
 
 # Save complex datasets (list-columns, modelling data) as RDS
 save_rds <- function(obj, name) {
-  root <- find_rstudio_root_file()
-  
-  out_dir <- file.path(root, "data", "cleaned")
+  out_dir <- file.path("..", "data", "cleaned")
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
   
   saveRDS(
@@ -433,6 +429,6 @@ save_csv(bee_data, "bee_data")
 save_csv(data_all, "data_all")
 
 # Save modelling dataset (contain list-columns)
-save_rds(data_all_scaled, "model_data_scaled")
+save_rds(data_all_scaled, "data_all_scaled")
 ```
 
