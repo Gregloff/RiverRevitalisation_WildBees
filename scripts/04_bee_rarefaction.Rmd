@@ -81,7 +81,7 @@ df_plot <- df_plot %>%
 # ==============================
 # Plot coverage-based rarefaction curves
 # ==============================
-ggplot(df_plot, aes(x = x, y = y, color = site, fill = site)) +
+p_covraref <- ggplot(df_plot, aes(x = x, y = y, color = site, fill = site)) +
   geom_line(linewidth = 1.2) +
   geom_ribbon(aes(ymin = y.lwr, ymax = y.upr), alpha = 0.25, color = NA) +
   facet_wrap(~ region) +
@@ -98,11 +98,26 @@ ggplot(df_plot, aes(x = x, y = y, color = site, fill = site)) +
   theme(panel.grid = element_blank(),
         plot.title = element_text(face = "bold"))
 
+p_covraref
 ```
 At low coverage, focal and control look similar → sampling effort not yet enough to reveal differences.
 At moderate coverage (0.6–0.9), focal curves are consistently above control → higher richness when standardized for completeness.
 Near full coverage, extrapolated ends diverge sharply, showing that focal assemblages have a larger “potential species pool”.
+
+
+The coverage‑based rarefaction curves allow us to compare focal and control sites at the same level of sampling completeness, even if neither group has been fully sampled and many bee species remain undetected. The x‑axis indicates sample coverage, meaning the proportion of the underlying community that has actually been observed. As we approach coverage = 1, the focal sites show a pronounced upward spike. This reflects the presence of many very rare species: with only a small amount of additional sampling, a disproportionately large number of new species would still be added. In contrast, the control sites lack such a sharp increase, suggesting fewer rare species and a community that is more fully sampled. Below about 0.8 coverage, the curves for focal and control sites largely overlap, indicating that the core, well‑sampled portion of the community is similar between treatments.”
+
 gpt
+
+```{r export rarefaction curves as tiff}
+tiff(
+  file.path("..", "output", "figures", "cov_rarefaction_site_600dpi.tiff"),
+  width = 3000, height = 2250, res = 600, compression = "lzw"
+)
+
+print(p_covraref)  # <-- replace with your actual plot object
+dev.off()
+```
 
 ```{r}
 

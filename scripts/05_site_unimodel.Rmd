@@ -144,6 +144,7 @@ p_rich <- ggplot() +
 
 p_rich
 ```
+
 ```{r print plot to tiff}
 tiff(
   file.path("..", "output", "figures", "predicted_bee_richness_by_site_600dpi.tiff"),
