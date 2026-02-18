@@ -21,11 +21,10 @@ bee_data <- read.csv(file.path("..", "data", "cleaned", "bee_data.csv"),
            check.names = FALSE)
 ```
 
+# Site-level rarefaction 
 ```{r}
 
-# ==============================
 # Identify metadata and species columns
-# ==============================
 meta_cols <- c(
   "surveyID", "plotID", "site", "region", "visit", "plot",
   "richness", "fieldIDsum",
@@ -39,51 +38,48 @@ meta_cols <- c(
 
 species_cols <- setdiff(names(bee_data), meta_cols)
 
-# ==============================
+
 # Aggregate all plots per site
-# ==============================
 bee_site <- bee_data %>%
   group_by(region, site) %>%
   summarise(across(all_of(species_cols), sum), .groups = "drop")
 
-# ==============================
-# Prepare iNEXT input list
-# ==============================
-inext_list <- setNames(
+
+# Prepare iNEXT input list (site-level)
+inext_site <- setNames(
   lapply(seq_len(nrow(bee_site)), function(i) {
     as.numeric(bee_site[i, species_cols])
   }),
   paste(bee_site$region, bee_site$site, sep = "_")
 )
 
-# ==============================
-# Run iNEXT for abundance data, species richness (q=0)
-# Coverage-based rarefaction + extrapolation
-# ==============================
-out_inext <- iNEXT(
-  inext_list,
-  q = 0,                  # species richness
+
+# Run iNEXT for abundance data (q = 0 richness)
+out_site <- iNEXT(
+  inext_site,
+  q = 0,
   datatype = "abundance",
-  endpoint = max(sapply(inext_list, sum)) * 2  # extrapolate to double sample size
+  endpoint = max(sapply(inext_site, sum)) * 2
 )
 ```
 
 ```{r}
-# ==============================
+
 # Extract coverage-based rarefaction data
-# ==============================
-df_plot <- fortify(out_inext, type = 3)  # type = 3 = sample coverage
+df_site <- fortify(out_site, type = 3)
+
 
 # Recover region and site labels
-df_plot <- df_plot %>%
+df_site <- df_site %>%
   separate(Assemblage, into = c("region", "site"), sep = "_")
 
-# ==============================
-# Plot coverage-based rarefaction curves
-# ==============================
-p_covraref <- ggplot(df_plot, aes(x = x, y = y, color = site, fill = site)) +
+
+# Plot coverage-based rarefaction curves (SITE level)
+p_covraref_site <- ggplot(df_site,
+                          aes(x = x, y = y, color = site, fill = site)) +
   geom_line(linewidth = 1.2) +
-  geom_ribbon(aes(ymin = y.lwr, ymax = y.upr), alpha = 0.25, color = NA) +
+  geom_ribbon(aes(ymin = y.lwr, ymax = y.upr),
+              alpha = 0.25, color = NA) +
   facet_wrap(~ region) +
   labs(
     x = "Sample coverage",
@@ -95,10 +91,13 @@ p_covraref <- ggplot(df_plot, aes(x = x, y = y, color = site, fill = site)) +
   scale_color_manual(values = c("focal" = "#2C7FB8", "control" = "#D95F02")) +
   scale_fill_manual(values = c("focal" = "#A6C1E0", "control" = "#F1B0AD")) +
   theme_bw(base_size = 12) +
-  theme(panel.grid = element_blank(),
-        plot.title = element_text(face = "bold"))
+  theme(
+    panel.grid = element_blank(),
+    plot.title = element_text(face = "bold")
+  )
 
-p_covraref
+p_covraref_site
+
 ```
 At low coverage, focal and control look similar → sampling effort not yet enough to reveal differences.
 At moderate coverage (0.6–0.9), focal curves are consistently above control → higher richness when standardized for completeness.
@@ -115,11 +114,11 @@ tiff(
   width = 3000, height = 2250, res = 600, compression = "lzw"
 )
 
-print(p_covraref)  # <-- replace with your actual plot object
+print(p_covraref_site)  # <-- replace with your actual plot object
 dev.off()
 ```
 
-```{r}
+```{r rarefaction values}
 
 asymptotic_df <- out_inext$AsyEst %>%
   # keep species richness (q = 0)
@@ -152,5 +151,126 @@ bee_abundance_by_site
 DataInfo(inext_list, datatype = "abundance")
 
 print(fortify(out_inext, type = 3))
+```
+
+
+
+# Plot-level rarefaction
+```{r rarefaction}
+# ==============================
+# Identify metadata and species columns
+# ==============================
+meta_cols <- c(
+  "surveyID", "plotID", "site", "region", "visit", "plot",
+  "richness", "fieldIDsum",
+  "bee_abundance_nofieldID", "bee_abundance",
+  "RLabund_LC", "RLabund_NT", "RLabund_VU", "RLabund_EN", "RLabund_DD",
+  "RLrich_LC", "RLrich_NT", "RLrich_VU", "RLrich_EN", "RLrich_DD",
+  "RLrich_CR", "RLabund_CR",
+  "RLrich_threatened", "RLabund_threatened",
+  "RLrich_total", "RLabund_total"
+)
+
+species_cols <- setdiff(names(bee_data), meta_cols)
+
+# ==============================
+# Aggregate visits WITHIN each plot
+# ==============================
+bee_plot <- bee_data %>%
+  group_by(region, site, plotID) %>%
+  summarise(across(all_of(species_cols), sum), .groups = "drop")
+
+# ==============================
+# Prepare iNEXT input list (per plot)
+# ==============================
+inext_list <- setNames(
+  lapply(seq_len(nrow(bee_plot)), function(i) {
+    as.numeric(bee_plot[i, species_cols])
+  }),
+  paste(bee_plot$region, bee_plot$site, bee_plot$plotID, sep = "_")
+)
+
+# ==============================
+# Run iNEXT: species richness (q=0), abundance data
+# ==============================
+out_inext <- iNEXT(
+  inext_list,
+  q = 0,
+  datatype = "abundance",
+  endpoint = max(sapply(inext_list, sum)) * 2
+)
+```
+
+```{r plot}
+# ==============================
+# Extract coverage-based rarefaction data
+# ==============================
+df_plot <- fortify(out_inext, type = 3)  # type = 3 = coverage-based rarefaction
+
+# Recover metadata
+df_plot <- df_plot %>%
+  separate(Assemblage, into = c("region", "site", "plotID"), sep = "_")
+
+# ==============================
+# Plot (per plot)
+# ==============================
+p_covraref <- ggplot(df_plot,
+                      aes(x = x, y = y, color = site, group = plotID)) +
+  geom_line(alpha = 0.7) +
+  geom_ribbon(aes(ymin = y.lwr, ymax = y.upr, fill = site), alpha = 0.15) +
+  facet_wrap(~ region) +
+  labs(
+    x = "Sample coverage",
+    y = "Estimated species richness",
+    title = "Coverage-based rarefaction by plot",
+    color = "Site",
+    fill = "Site"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(panel.grid = element_blank(),
+        plot.title = element_text(face = "bold"))
+
+p_covraref
+```
+```{r}
+df_plot <- fortify(out_inext, type = 3)
+
+
+df_plot <- df_plot %>%
+  separate(Assemblage, into = c("region", "site", "plotID"), sep = "_")
+
+
+
+extract_rarefied <- function(df, target_coverage) {
+  df %>%
+    filter(Method != "Observed") %>%             # exclude observed-only point
+    group_by(region, site, plotID) %>%
+    slice(which.min(abs(x - target_coverage))) %>%  # closest to target SC
+    ungroup() %>%
+    select(
+      region, site, plotID,
+      coverage = x,
+      richness = y,
+      richness_lwr = y.lwr,
+      richness_upr = y.upr,
+      Method
+    )
+}
+
+
+target_coverage <- 0.85   # or 0.90 depending on your choice
+
+df_plot_rarefied <- extract_rarefied(df_plot, target_coverage)
+
+
+
+bm_rich <- glmmTMB(
+  richness ~ site + (1 | region),
+  family = nbinom2,
+  data = df_plot_rarefied
+)
+
+summary(bm_rich)
+
 ```
 
