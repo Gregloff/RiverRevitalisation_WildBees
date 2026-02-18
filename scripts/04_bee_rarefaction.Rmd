@@ -239,7 +239,7 @@ df_plot <- fortify(out_inext, type = 3)
 df_plot <- df_plot %>%
   separate(Assemblage, into = c("region", "site", "plotID"), sep = "_")
 
-
+test()
 
 extract_rarefied <- function(df, target_coverage) {
   df %>%
