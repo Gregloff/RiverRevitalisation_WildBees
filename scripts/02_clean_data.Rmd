@@ -127,7 +127,7 @@ plant_data$hill_q0 <- rowSums(plant_data[1:131] > 0, na.rm = TRUE)
 plant_data$hill_q1 <- exp(diversity(plant_data[1:131], index = "shannon"))
 
 # Hill number for q = 2 (inverse Simpson)
-plant_data$hill_q2 <- 1 / diversity(plant_data[1:131], index = "invsimpson")
+plant_data$hill_q2 <- diversity(plant_data[1:131], index = "invsimpson")
 
 # Current plant_data has metadata at the end; let's reorder
 plant_data <- plant_data[, c("site", "region", "visit", "plotID",
@@ -327,7 +327,7 @@ Compute Hill q = 1 and q = 2 indexes
 bee_data$bee_hill_q1 <- exp(diversity(bee_data[7:151], index = "shannon"))
 
 # Hill number for q = 2 (inverse Simpson)
-bee_data$bee_hill_q2 <- 1 / diversity(bee_data[7:151], index = "invsimpson")
+bee_data$bee_hill_q2 <- diversity(bee_data[7:151], index = "invsimpson")
 ```
 
 # Model data
