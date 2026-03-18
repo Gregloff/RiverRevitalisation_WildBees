@@ -123,13 +123,13 @@ corrplot(
 # bareground - vegcover -> bareground
 # herb - woody -> herb
 # flat - sloped -> sloped
-# hill_q0 - hill_q1 -> hill_q1
+# hill_q0 - hill_q1  hill_q2 -> hill_q1
 
 # canopy_hp excluded as constant across visits
 env_vars <- c("bareground", "vegheight", "herb", "sand", "gravel", "cobble",
               "stone", "wood", "soil", "sloped", "steep", "canopy",
               "branchpile", "stonepile", "standingdeadwood", "lyingdeadwood",
-              "hill_q1", "hill_q2")
+              "hill_q1")
 ```
 
 Can we include site as explanatory variable in a multivariate model? - No, this chunk shows that too many of the habitat variables confound with site, and should therefore not be included in the same multivariate model.
@@ -138,7 +138,7 @@ num_vars <- c("visit", "bareground", "vegcover", "vegheight", "herb", "woody",
               "sand", "gravel", "cobble", "stone", "wood", "soil", "flat",
               "sloped", "steep", "canopy", "canopy_hp", "branchpile",
               "stonepile", "patchiness", "standingdeadwood", "lyingdeadwood",
-              "hill_q1", "hill_q2")
+              "hill_q1")
 
 site_tests <- lapply(num_vars, function(v) {
   wt <- wilcox.test(data_all_scaled[[v]] ~ data_all_scaled$site)
@@ -211,7 +211,6 @@ model_um_abundance <- tibble(
   ))
 )
 ```
-
 
 ```{r bee ab model: plot univarite model predictions}
 model_df <- model_um_abundance
@@ -286,11 +285,11 @@ ggplot(significant_df, aes(x = reorder(Variable, Estimate), y = Estimate)) +
 
 Build multivariate model for bee abundance
 
-model convergence issue with random slope (1 + visit | plotID) included. Will add after dredge 
+model convergence issue without random slope (1 + visit | plotID) included. Will add after dredge 
 ```{r Bee abundance global model}
 AB_glmm <- glmmTMB(
   bee_abundance ~
-    hill_q1 + hill_q2 + sand + herb + canopy + patchiness_ord +
+    hill_q0 + sand + herb + canopy + patchiness_ord +
     (1 | region) + (1 | plotID),
   family = nbinom2,
   data = data_all_scaled,
@@ -298,7 +297,7 @@ AB_glmm <- glmmTMB(
 )
 print(summary(AB_glmm))
 
-vif(lm(bee_abundance ~ hill_q1 + hill_q2 + sand + soil + vegheight +
+vif(lm(bee_abundance ~ hill_q0 + sand + soil + vegheight +
     canopy + steep + patchiness_ord,
        data = data_all_scaled))
 #all values below 3 - no multicollinearity 
