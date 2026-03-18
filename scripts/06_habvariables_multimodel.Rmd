@@ -304,6 +304,7 @@ vif(lm(bee_abundance ~ hill_q1 + hill_q2 + sand + soil + vegheight +
 #all values below 3 - no multicollinearity 
 
 ```
+
 ```{r Bee abundance dredge}
 dd <- dredge(AB_glmm, rank = "AICc", trace = 2)
 dd
@@ -313,7 +314,6 @@ head(dd)
 
 Best model abundance - add random intercept visit
 ```{r}
-
 # If you kept only the best fixed-effects set:
 final_abund <- glmmTMB(
   bee_abundance ~ hill_q1 + hill_q2 + patchiness_ord +
@@ -339,9 +339,7 @@ sw(subset(dd, delta <= 2))
 
 ```{r falcon plot model average richness}
 
-# -------------------------------------------------
 # 1. PREP COEFFICIENTS (model.avg output)
-# -------------------------------------------------
 coef_df <- as.data.frame(summary(avg_mod)$coefmat.full)
 coef_df$term <- rownames(coef_df)
 
@@ -353,71 +351,93 @@ ci <- confint(avg_mod)
 coef_df$lower <- ci[coef_df$term, 1]
 coef_df$upper <- ci[coef_df$term, 2]
 
-# -------------------------------------------------
 # 2. MAP IMPORTANCE (from sw(top_set))
-# -------------------------------------------------
+
 imp <- sw(subset(dd, delta <= 2))
 
 coef_df$importance <- NA
 coef_df$importance[coef_df$term == "cond(hill_q1)"]             <- imp["cond(hill_q1)"]
 coef_df$importance[coef_df$term == "cond(hill_q2)"]             <- imp["cond(hill_q2)"]
 coef_df$importance[coef_df$term == "cond(sand)"]                <- imp["cond(sand)"]
-coef_df$importance[coef_df$term == "cond(vegheight)"]          <- imp["cond(vegheight)"]
+coef_df$importance[coef_df$term == "cond(canopy)"]          <- imp["cond(canopy)"]
+coef_df$importance[coef_df$term == "cond(herb)"]          <- imp["cond(herb)"]
 coef_df$importance[coef_df$term == "cond(patchiness_ord.L)"]    <- imp["cond(patchiness_ord)"]
 
 # Drop Q and C contrasts
 coef_df <- coef_df[!coef_df$term %in% c("cond(patchiness_ord.Q)", "cond(patchiness_ord.C)"), ]
 
-# -------------------------------------------------
 # 3. COLOR CODE BY IMPORTANCE THRESHOLD
-# -------------------------------------------------
+
 importance_threshold <- 0.8
 
 coef_df$color <- ifelse(
   coef_df$importance >= importance_threshold,
-  "#D55E00",   # orange
-  "gray50"
+  "#C71586",
+  "gray40"
 )
 
-# -------------------------------------------------
 # 4. CLEAN LABELS
-# -------------------------------------------------
+
 coef_df$clean_label <- coef_df$term %>%
   str_replace("cond\\(", "") %>%
   str_replace("\\)", "") %>%
-  str_replace("_ord.L", " (linear)") %>%
-  str_replace("hill_q1", "Hill q=1") %>%
-  str_replace("hill_q2", "Hill q=2") %>%
+  str_replace("_ord.L", "") %>%
+  str_replace("hill_q1", "Floral Shannon diversity") %>%
+  str_replace("hill_q2", "Floral inv Simpson diversity") %>%
   str_replace("sand", "Sand") %>%
-  str_replace("vegheight", "Vegetation height") %>%
+  str_replace("canopy", "Canopy cover") %>%
+  str_replace("herb", "Herb layer cover") %>%
   str_replace("patchiness", "Plot heterogeneity")
 
-# -------------------------------------------------
-# 5. FINAL PLOT (NO size legend, NO circles encoding)
-# -------------------------------------------------
-ggplot(coef_df, aes(x = Estimate, y = reorder(clean_label, Estimate))) +
+
+# 5. plot
+
+p_falcon_ab <- ggplot(coef_df, aes(x = Estimate, y = reorder(clean_label, Estimate))) +
   
-  # CI bars
   geom_errorbarh(aes(xmin = lower, xmax = upper),
-                 height = 0,
+                 width = 0,
                  color = coef_df$color,
                  linewidth = 0.8) +
   
-  # Points
   geom_point(color = coef_df$color,
              size = 3, stroke = 1) +
   
   geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
   
   theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_line(color = "grey85"),   # vertical gridlines ON
+    panel.grid.major.y = element_line(color = "grey90"),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 13),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(face = "bold", size = 15, margin = margin(b = 4)),
+    plot.subtitle = element_text(size = 12, margin = margin(b = 8)),
+    
+    axis.title.y = element_text(margin = margin(r = 10))
+  ) +
+  
   labs(
-    title = "Falcon Plot of Model-Averaged Effects",
+    title = "Model-Averaged Effects on Bee Abundance",
     subtitle = "Predictors with importance ≥ 0.8 colored in orange",
     x = "Model-averaged estimate (95% CI)",
     y = NULL
   )
 
+p_falcon_ab
+
 ```
+
+```{r}
+tiff(
+  file.path("..", "output", "figures", "falcon_mavgbee_ab_600dpi.tiff"),
+  width = 3990, height = 3000, res = 600, compression = "lzw"
+)
+
+print(p_falcon_ab)  
+dev.off()
+```
+
 We performed an information‑theoretic model selection using AICc and averaged all models within ΔAICc ≤ 2 to account for model selection uncertainty. Model‑averaged estimates and variable importance (sum of AICc weights) are shown in the Falcon plot (Fig. X).
 Three predictors were strongly supported across the model set, each with an importance of 1.0: patchiness (linear component), plant diversity Hill q=1, and Hill q=2. All three had positive model‑averaged effects, indicating that more heterogeneous habitat structure and higher plant diversity are associated with increased bee abundance. Among these, patchiness had the largest effect size.
 In contrast, sand cover (importance 0.34) and bare ground (importance 0.18) received little support and contributed negligibly to explaining variation in bee abundance. Their model‑averaged confidence intervals overlapped zero, indicating weak evidence for any directional effect.
@@ -488,6 +508,7 @@ vif(lm(bee_richness ~ hill_q1 + hill_q2 + sand + soil + vegheight +
 #all values below 3 - no multicollinearity 
 
 ```
+
 ```{r Bee richness dredge}
 dr <- dredge(RI_glmm, rank = "AICc", trace = 2)
 dr

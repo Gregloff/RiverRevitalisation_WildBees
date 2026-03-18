@@ -24,6 +24,27 @@ bee_data <- read.csv(file.path("..", "data", "cleaned", "bee_data.csv"),
 Coverage‑based rarefaction (Chao et al. 2014, 2020) provides descriptive standardization, not inferential estimates, and its resulting diversity values do not follow the distributional assumptions required for GLMMs (e.g. Gotelli & Colwell 2001; Chao & Jost 2012). Rarefaction also collapses plot‑level replication, removes ecological variance, and prevents correct estimation of random effects.
 Because our sampling design includes spatial and hierarchical structure (multiple visits per plot; plots nested within sites; sites nested within regions), a GLMM using plot‑level richness/abundance with region and plotID as random effects is the statistically appropriate inferential framework.
 
+
+Reason behind random effects strutcure:
+Bee richness depends on the site, but richness also varies from region to region and from plot to plot. Also, the way richness changes over visits is different for each plot. The data are counts with overdispersion.”
+
+A random intercept for region.
+Bee richness varies among regions.
+Each region gets its own intercept—i.e., its baseline bee richness level can be higher or lower than the global mean.
+You assume that observations within a region are correlated.
+
+A random intercept AND random slope for visit, grouped by plot.
+This means:
+Each plot has its own baseline bee richness (random intercept).
+The effect of visit (e.g., sampling round, date, etc.) varies among plots (random slope).
+So each plot has:
+its own starting point (intercept),
+its own trend across visits (slope),
+and usually a correlation between the intercept and the slope is also estimated (unless you specify ||).
+
+gpt
+
+# Richness
 ```{r fit model}
 
 nm_rich <- glmmTMB(
@@ -147,11 +168,178 @@ p_rich
 
 ```{r print plot to tiff}
 tiff(
-  file.path("..", "output", "figures", "predicted_bee_richness_by_site_600dpi.tiff"),
+  file.path("..", "output", "figures", "pred_bee_ri_site_600dpi.tiff"),
   width = 3000, height = 2250, res = 600, compression = "lzw"
 )
 
 print(p_rich)
 dev.off()
+```
+
+# Richness Site and region interative for context specificity
+
+```{r interactive site*region}
+
+sitreg_rich <- glmmTMB(
+  bee_richness ~ region * site + 
+    (1 + visit | plotID),
+  family = nbinom2,
+  data = data_all_scaled
+)
+
+summary(sitreg_rich)
+```
+Fixed effects:
+
+Bee richness varied significantly among regions (Table X).
+The focal site had significantly higher richness overall (β = 1.05 ± 0.27, p < 0.001).
+However, this effect was highly context-specific, as shown by a significant region × site interaction for Region Thiele (β = 1.59 ± 0.42, p < 0.001), indicating a much stronger focal–control difference there than in other regions.
+
+And for the random effects:
+
+Random effects indicated substantial plot-to-plot variation in both baseline richness and its change across visits. The strong negative correlation (–0.91) between intercepts and slopes suggests that plots with initially high richness tended to decline over visits, whereas initially low-richness plots tended to increase.
+gpt
+
+```{r plot site*region interactive model}
+
+# --- Ensuring proper factor order ---
+data_all_scaled$site   <- factor(data_all_scaled$site,   levels = c("control", "focal"))
+data_all_scaled$region <- factor(data_all_scaled$region)
+
+# --- Colors ---
+site_cols <- c(
+  "control" = "#D95F09",
+  "focal"   = "#2C7FB8"
+)
+
+# --- Predicted Region × Site means ---
+pred_rs <- ggpredict(sitreg_rich, terms = c("region", "site"))
+
+# Rename columns for clarity
+pred_rs <- pred_rs %>%
+  rename(region = x, site = group)
+
+pred_rs$region <- factor(pred_rs$region, levels = levels(data_all_scaled$region))
+pred_rs$site   <- factor(pred_rs$site,   levels = c("control", "focal"))
+
+# --- PLOT ---
+p_rich_rs <- ggplot() +
+
+  # 1) RAW DATA POINTS — **automatically subset per facet**  
+  geom_jitter(
+    data = data_all_scaled,
+    aes(x = site, y = bee_richness, colour = site),
+    width = 0.12, alpha = 0.20, size = 1.6,
+    show.legend = FALSE
+  ) +
+
+  # 2) MODEL-PREDICTED MEANS  
+  geom_point(
+    data = pred_rs,
+    aes(x = site, y = predicted, colour = site),
+    size = 3.8,
+    show.legend = FALSE
+  ) +
+
+  # 3) 95% CIs  
+  geom_errorbar(
+    data = pred_rs,
+    aes(x = site, ymin = conf.low, ymax = conf.high, colour = site),
+    width = 0.10, linewidth = 1,
+    show.legend = FALSE
+  ) +
+
+  scale_colour_manual(values = site_cols) +
+
+  # --- FACET BY REGION ---
+  facet_wrap(~ region, nrow = 1) +
+
+  labs(
+    x = NULL,
+    y = "Bee species richness",
+    title = "Predicted Bee Richness by Region × Site",
+    subtitle = "Points = model-estimated means ± 95% CI \nJittered points = raw observations"
+  ) +
+
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold", size = 15),
+    plot.subtitle = element_text(size = 11),
+    axis.title.y = element_text(margin = margin(r = 8)),
+    panel.spacing = unit(0,"lines")
+  )
+
+p_rich_rs
+
+```
+
+```{r print plot to tiff}
+tiff(
+  file.path("..", "output", "figures", "pred_bee_ri_sitexregion_600dpi.tiff"),
+  width = 3000, height = 2250, res = 600, compression = "lzw"
+)
+print(p_rich_rs)
+dev.off()
+```
+
+# Abundance
+```{r abundance}
+bm_abund <- glmmTMB(
+  bee_abundance ~ site + (1 | region) + (1 + visit | plotID),
+  family = nbinom2,
+  data = data_all_scaled
+)
+
+summary(nm_abundance)
+
+summary(bm_abund)
+confint(bm_abund)
+emmeans(bm_abund, pairwise ~ site)
+```
+
+# Hill q1
+```{r Load data}
+data_all_scaled <- readRDS(file.path("..", "data", "cleaned", "data_all_scaled.rds"))
+```
+
+```{r}
+hist(data_all_scaled$bee_hill_q1)
+hist(data_all_scaled$bee_hill_q2)
+```
+```{r fit model}
+
+nm_q1 <- glmmTMB(
+  bee_hill_q1 ~ 1 + (1 | region) + (1 + visit | plotID),
+  family = Gamma(link="log"),
+  data = data_all_scaled
+)
+
+bm_q1 <- glmmTMB(
+  bee_hill_q1 ~ site + (1 | region) + (1 + visit | plotID),
+  family = Gamma(link="log"),
+  data = data_all_scaled
+)
+
+anova(nm_q1, bm_q1)
+# random-effect structure is stable enough to support inference
+# the visit random slope is not causing singularity
+# adding site explains substantial variation in richness
+# the data contain enough replication for strong inference
+
+res <- simulateResiduals(bm_q1)
+plot(res)
+# no evidence for overdispersion, no deviation from expected residualdistribution
+# no outliers, no heterogeneity of variance between site types
+
+testDispersion(bm_q1)
+testZeroInflation(bm_q1)
+
+
+summary(bm_q1)
+confint(bm_q1)
+emmeans(bm_q1, pairwise ~ site)
+
 ```
 

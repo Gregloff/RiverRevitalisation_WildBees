@@ -1,0 +1,162 @@
+---
+title: "07_NMDS_multivariate"
+output: html_document
+---
+
+```{r Load packages}
+library(vegan)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+```{r Load data}
+# Compact helper function to read raw CSVs
+bee_data <- read.csv(file.path("..", "data", "cleaned", "bee_data.csv"),
+           stringsAsFactors = FALSE,
+           check.names = FALSE)
+```
+
+```{r}
+
+###############################################################
+# 1. Detect species columns (format: "Genus species")
+###############################################################
+
+species_cols <- names(bee_data)[
+  str_detect(names(bee_data), "^[A-Z][a-z]+\\s[a-z]+")
+]
+
+cat("Species columns detected:", length(species_cols), "\n")
+
+###############################################################
+# 2. Collapse repeated visits → one row per plot
+###############################################################
+
+plot_level <- bee_data %>%
+  group_by(region, site, plotID) %>%
+  summarise(across(all_of(species_cols), ~ sum(.x, na.rm = TRUE))) %>%
+  ungroup()
+
+###############################################################
+# 3. Convert abundances to presence/absence
+###############################################################
+
+plot_level[species_cols] <- (plot_level[species_cols] > 0) * 1
+
+###############################################################
+# 4. Extract community matrix + metadata
+###############################################################
+
+comm_matrix <- as.data.frame(plot_level[, species_cols])
+
+meta <- plot_level %>%
+  select(region, site, plotID)
+
+###############################################################
+# 5. Remove empty rows (plots with zero bees)
+###############################################################
+
+empty_rows <- rowSums(comm_matrix) == 0
+cat("Empty plots removed:", sum(empty_rows), "\n")
+
+comm_matrix <- comm_matrix[!empty_rows, ]
+meta <- meta[!empty_rows, ]
+
+###############################################################
+# 6. Fit NMDS on FULL dataset once (Bray on PA = Sørensen)
+###############################################################
+
+set.seed(123)
+
+nmds <- metaMDS(
+  comm_matrix,
+  distance = "bray",
+  k = 2,
+  trymax = 200
+)
+
+cat("NMDS stress =", nmds$stress, "\n")
+
+###############################################################
+# 7. Combine NMDS scores with metadata
+###############################################################
+
+nmds_scores <- as.data.frame(scores(nmds, display = "sites"))
+nmds_scores <- cbind(nmds_scores, meta)
+
+###############################################################
+# 8. Faceted GGplot NMDS — one panel per region
+###############################################################
+
+ggplot(nmds_scores, aes(NMDS1, NMDS2, color = site)) +
+  geom_point(size = 3, alpha = 0.9) +
+  stat_ellipse(aes(group = site), linewidth = 1) +
+  facet_wrap(~ region, scales = "free") +
+  theme_minimal() +
+  labs(
+    title = "NMDS — Bee Species Composition by Region (Presence/Absence)",
+    subtitle = paste("NMDS Stress =", round(nmds$stress, 3),
+                     "• Ellipses compare focal vs control *within each region*"),
+    color = "Site Type"
+  )
+
+```
+```{r}
+
+betadisp <- betadisper(vegdist(comm_matrix, method="bray"), meta$site)
+anova(betadisp)
+
+```
+
+
+```{r}
+# ---- Update these variable names to match your dataset ----
+env_vars <- bee_data %>%
+  select(plotID, flower_richness, veg_height, bare_ground, temperature) %>%
+  distinct()
+
+# Match to plot-level samples
+env_clean <- meta %>%
+  left_join(env_vars, by = "plotID")
+
+# Scale environmental variables
+env_scaled <- env_clean %>%
+  select(flower_richness, veg_height, bare_ground, temperature) %>%
+  scale()
+
+# db-RDA model
+dbrda_model <- capscale(
+  comm_matrix ~ flower_richness + veg_height + bare_ground + temperature + site,
+  data = cbind(meta, env_scaled),
+  distance = "bray"
+)
+
+# Significance
+print(anova(dbrda_model, permutations = 999))
+print(anova(dbrda_model, by = "terms", permutations = 999))
+
+# Extract scores for plotting
+dbrda_scores <- scores(dbrda_model)
+site_scores  <- as.data.frame(dbrda_scores$sites) %>% cbind(meta)
+species_scores <- as.data.frame(dbrda_scores$species)
+
+ggplot() +
+  geom_point(data = site_scores,
+             aes(CAP1, CAP2, color = site, shape = region),
+             size = 3, alpha = 0.9) +
+  geom_segment(data = species_scores,
+               aes(x = 0, y = 0, xend = CAP1, yend = CAP2),
+               arrow = arrow(length = unit(0.2, "cm")),
+               color = "grey40") +
+  theme_minimal() +
+  labs(
+    title = "db-RDA — Environmental Drivers of Bee Communities",
+    x = "CAP1",
+    y = "CAP2"
+  )
+
+
+```
+
+

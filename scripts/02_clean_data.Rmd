@@ -321,6 +321,15 @@ should we limit the count of each species per plot above 10, 15, 20?
   bee_abundance_long |> filter(abundance > 20)
 ```
 
+Compute Hill q = 1 and q = 2 indexes
+```{r plant diversity indices}
+# Hill number for q = 1 (exponential of Shannon)
+bee_data$bee_hill_q1 <- exp(diversity(bee_data[7:151], index = "shannon"))
+
+# Hill number for q = 2 (inverse Simpson)
+bee_data$bee_hill_q2 <- 1 / diversity(bee_data[7:151], index = "invsimpson")
+```
+
 # Model data
 Create full dataset for modelling
 ```{r bee model data prep: data_all prep}

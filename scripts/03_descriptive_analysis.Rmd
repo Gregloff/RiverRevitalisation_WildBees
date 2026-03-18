@@ -561,6 +561,93 @@ sum(control_pres)
 sum(focal_pres)
 
 ```
+```{r species accumulation curve}
+
+p_accumsite <- function() {
+
+  colnames(bee_data)
+
+  bee_matrix <- bee_data[, !(names(bee_data) %in% c(
+    "surveyID","plotID","site","region","visit","plot",
+    "richness","fieldIDsum","bee_abundance_nofieldID","bee_abundance",
+    "RLabund_LC","RLabund_NT","RLabund_VU","RLabund_EN","RLabund_DD",
+    "RLrich_LC","RLrich_NT","RLrich_VU","RLrich_EN","RLrich_DD",
+    "RLrich_CR","RLabund_CR","RLrich_threatened","RLabund_threatened",
+    "RLrich_total","RLabund_total"))]
+
+  spec_accum <- specaccum(bee_matrix, method = "random")
+
+  site_cols <- list(
+    focal   = "#2C7FB8",
+    control = "#D95F09"
+  )
+  site_cols$focal_light   <- adjustcolor(site_cols$focal,   alpha.f = 0.25)
+  site_cols$control_light <- adjustcolor(site_cols$control, alpha.f = 0.25)
+
+  plot(spec_accum,
+       xlab = "Number of surveys (plot visits)",
+       ylab = "Accumulated species richness",
+       main = "Species Accumulation Curve",
+       ci.type = "polygon",
+       col = "#C71586",
+       lwd = 2,
+       ci.col = adjustcolor("#C71586", alpha.f = 0.25),
+       ci.lty = 0)
+
+  bee_matrix_control <- bee_matrix[bee_data$site == "control", ]
+  bee_matrix_focal   <- bee_matrix[bee_data$site == "focal",   ]
+
+  bee_accum_control <- specaccum(bee_matrix_control, method = "random")
+  bee_accum_focal   <- specaccum(bee_matrix_focal,   method = "random")
+
+  ylim_all <- range(
+    c(bee_accum_control$richness - bee_accum_control$sd,
+      bee_accum_control$richness + bee_accum_control$sd,
+      bee_accum_focal$richness   - bee_accum_focal$sd,
+      bee_accum_focal$richness   + bee_accum_focal$sd),
+    na.rm = TRUE
+  )
+
+  plot(bee_accum_control,
+       xlab = "Number of surveys (plot visits)",
+       ylab = "Accumulated species richness",
+       main = "Species Accumulation: Control vs Focal Sites",
+       ci.type = "polygon",
+       col    = site_cols$control,
+       lwd    = 2,
+       ci.col = site_cols$control_light,
+       ci.lty = 0,
+       ylim   = ylim_all)
+
+  plot(bee_accum_focal,
+       add    = TRUE,
+       col    = site_cols$focal,
+       lwd    = 2,
+       ci.type = "polygon",
+       ci.col = site_cols$focal_light,
+       ci.lty = 0)
+
+  legend("bottomright",
+         legend = c("Control", "Focal"),
+         col    = c(site_cols$control, site_cols$focal),
+         lwd    = 2,
+         bty    = "n")
+}
+p_accumsite()
+```
+
+
+```{r print species accumulation cirve by site}
+
+tiff(
+  file.path("..", "..", "output", "figures", "spec_accum_site.tiff"),
+  width = 3000, height = 2250, res = 600, compression = "lzw"
+)
+p_accumsite()
+dev.off()
+```
+
+
 
 ```{r bee data wilcoxon tests}
 

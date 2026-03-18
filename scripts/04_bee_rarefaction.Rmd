@@ -22,7 +22,7 @@ bee_data <- read.csv(file.path("..", "data", "cleaned", "bee_data.csv"),
 ```
 
 # Site-level rarefaction 
-```{r}
+```{r colorblidn friendly approach}
 
 # Identify metadata and species columns
 meta_cols <- c(
@@ -108,6 +108,7 @@ The coverage‑based rarefaction curves allow us to compare focal and control si
 
 gpt
 
+
 ```{r export rarefaction curves as tiff}
 tiff(
   file.path("..", "output", "figures", "cov_rarefaction_site_600dpi.tiff"),
@@ -155,7 +156,7 @@ print(fortify(out_inext, type = 3))
 
 
 
-# Plot-level rarefaction
+# Plot-level rarefaction and model
 ```{r rarefaction}
 # ==============================
 # Identify metadata and species columns
@@ -232,14 +233,12 @@ p_covraref <- ggplot(df_plot,
 
 p_covraref
 ```
-```{r}
+```{r Model with rarefaction values}
 df_plot <- fortify(out_inext, type = 3)
 
 
 df_plot <- df_plot %>%
-  separate(Assemblage, into = c("region", "site", "plotID"), sep = "_")
-
-test()
+  # separate(Assemblage, into = c("region", "site", "plotID"), sep = "_")
 
 extract_rarefied <- function(df, target_coverage) {
   df %>%
@@ -273,4 +272,4 @@ bm_rich <- glmmTMB(
 summary(bm_rich)
 
 ```
-
+It’s better to model the raw survey data because it preserves the full hierarchical structure of your sampling—plots, visits, and regions—allowing correct estimation of variability and detection effects, which rarefaction discards. Coverage‑rarefied richness values are generated estimates with their own uncertainty, not independent observations, and using them in regressions can distort variance and bias inference (a point emphasized by Gotelli & Colwell 2001). Lastly, raw‑data GLMMs align with best‑practice recommendations for analyzing ecological count data (Bolker et al. 2009), whereas rarefaction is intended primarily for descriptive standardization, not as the primary response in statistical models.
