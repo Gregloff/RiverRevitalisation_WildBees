@@ -128,6 +128,8 @@ plant_data$hill_q1 <- exp(diversity(plant_data[1:131], index = "shannon"))
 
 # Hill number for q = 2 (inverse Simpson)
 plant_data$hill_q2 <- diversity(plant_data[1:131], index = "invsimpson")
+# Plots with 0 plant return Inf - convert to NA for interpretability
+plant_data$hill_q2 <- ifelse(plant_data$hill_q0 == 0, NA, plant_data$hill_q2)
 
 # Current plant_data has metadata at the end; let's reorder
 plant_data <- plant_data[, c("site", "region", "visit", "plotID",
@@ -140,7 +142,7 @@ plant_data <- plant_data[, c("site", "region", "visit", "plotID",
 
 #Bee data
 Prepare bee data
-```{r bee data prep}
+# ```{r bee data prep}
 # remove extra plots (plots #13) and Wasps
 beedata <- beedata[!(beedata$plot == 13 | beedata$Gattung == "Wasp"), ]
 
@@ -171,7 +173,7 @@ bee_data <- left_join(metadata, bee_abundance_matrix, by = "surveyID")
 
 str(bee_data)
 
-#add field ID morphospecies of Bombus and Xylocopa (only for abundance data
+#add field ID morphospecies of Bombus and Xylocopa (only for abundance data)
 bee_data <- left_join(bee_data, mapp_data |>
                         select(surveyID, fieldIDsum), by = "surveyID")
 
@@ -243,9 +245,9 @@ bee_data <- bee_data |>
 
 # turn NA into 0 in species matrix
 bee_data[is.na(bee_data)] <- 0
-```
+<!-- ``` -->
 
-```{r handle aggregates}
+# ```{r handle aggregates}
 
 # Define species within aggregates
 halictus_species <- c("Halictus simplex",
@@ -302,11 +304,100 @@ bee_data[[bombus_aggr]] <- bee_data[[bombus_aggr]] +
   rowSums(bee_data[bombus_species], na.rm = TRUE)
 bee_data[bombus_species] <- NULL     # remove species-level columns
 
+<!-- ``` -->
+```{r}
+# PREP BEE DATA
+# remove extra plots (plots #13) and Wasps
+beedata <- beedata[!(beedata$plot == 13 | beedata$Gattung == "Wasp"), ]
+
+# Combine genus and species into a single species name
+beedata <- beedata |>
+  mutate(bee_species = paste(Gattung, Art, sep = " "))
+
+
+# Count number of individuals per species per surveyID
+bee_abundance_matrix <- beedata |>
+  group_by(surveyID, bee_species) |>
+  summarise(bee_abundance = n(), .groups = "drop") |>
+  pivot_wider(names_from = bee_species,
+              values_from = bee_abundance, values_fill = 0)
+
+# Reorder columns: keep 'surveyID' first, sort the rest alphabetically
+bee_abundance_matrix <- bee_abundance_matrix[, c(
+  "surveyID",
+  sort(setdiff(names(bee_abundance_matrix), "surveyID"))
+)]
+
+# check if right number of rows
+nrow(beedata) # 1871 bees total
+sum(bee_abundance_matrix[, -1])
+
+# Merge metadata with species abundance matrix
+bee_data <- left_join(metadata, bee_abundance_matrix, by = "surveyID")
+
+# turn NA into 0 in species matrix
+bee_data[is.na(bee_data)] <- 0
+
+#add field ID morphospecies of Bombus and Xylocopa (only for abundance data
+bee_data <- left_join(bee_data, mapp_data |>
+                        select(surveyID, fieldIDsum), by = "surveyID")
+
+# Handle bumbleebee aggregates
+halictus_species <- c("Halictus simplex", "Halictus eurygnathus", "Halictus langobardicus")
+bombus_t_species <- c("Bombus terrestris", "Bombus cryptarum")
+bombus_h_species <- c("Bombus hortorum", "Bombus ruderatus")
+halictus_aggr    <- "Halictus simplex aggr."
+bombus_t_aggr    <- "Bombus terrestris aggr."
+bombus_h_aggr    <- "Bombus hortorum aggr."
+
+# Diagnostic loop
+for (i in 1:nrow(bee_data)) {
+  row <- bee_data[i, ]
+  halictus_present        <- any(row[halictus_species] > 0)
+  halictus_aggr_present   <- row[[halictus_aggr]] > 0
+  bombus_t_present        <- any(row[bombus_t_species] > 0)
+  bombus_t_aggr_present   <- row[[bombus_t_aggr]] > 0
+  bombus_h_present        <- any(row[bombus_h_species] > 0)
+  bombus_h_aggr_present   <- row[[bombus_h_aggr]] > 0
+  if ((halictus_present && halictus_aggr_present) ||
+      (bombus_t_present && bombus_t_aggr_present) ||
+      (bombus_h_present && bombus_h_aggr_present)) {
+    cat("\n--- Row", i, "surveyID:", row$surveyID, "---\n")
+    if (halictus_present & halictus_aggr_present) {
+      cat("Halictus species present:\n"); print(row[halictus_species])
+      cat("Halictus aggregate present:\n"); print(row[halictus_aggr])
+    }
+    if (bombus_t_present & bombus_t_aggr_present) {
+      cat("Bombus terrestris species present:\n"); print(row[bombus_t_species])
+      cat("Bombus terrestris aggregate present:\n"); print(row[bombus_t_aggr])
+    }
+    if (bombus_h_present & bombus_h_aggr_present) {
+      cat("Bombus hortorum species present:\n"); print(row[bombus_h_species])
+      cat("Bombus hortorum aggregate present:\n"); print(row[bombus_h_aggr])
+    }
+  }
+}
+
+sum(bee_data$`Halictus simplex aggr.` > 0)
+sum(bee_data$`Bombus terrestris aggr.` > 0)
+sum(bee_data$`Bombus hortorum aggr.` > 0)
+
+# Collapse aggregates
+bee_data[[halictus_aggr]] <- bee_data[[halictus_aggr]] +
+  rowSums(bee_data[halictus_species], na.rm = TRUE)
+bee_data[halictus_species] <- NULL
+
+bee_data[[bombus_t_aggr]] <- bee_data[[bombus_t_aggr]] +
+  rowSums(bee_data[bombus_t_species], na.rm = TRUE)
+bee_data[bombus_t_species] <- NULL
+
+bee_data[[bombus_h_aggr]] <- bee_data[[bombus_h_aggr]] +
+  rowSums(bee_data[bombus_h_species], na.rm = TRUE)
+bee_data[bombus_h_species] <- NULL
 ```
 
 
-should we limit the count of each species per plot above 10, 15, 20?
-
+should we limit the count of each species per plot above 10, 15, 20? - not for now
 ```{r exploring bee data}
   # Convert to long format
   bee_abundance_long <- bee_abundance_matrix |>
@@ -321,14 +412,69 @@ should we limit the count of each species per plot above 10, 15, 20?
   bee_abundance_long |> filter(abundance > 20)
 ```
 
-Compute Hill q = 1 and q = 2 indexes
-```{r plant diversity indices}
+Compute Bee diversity values
+```{r bee diversity indices}
+bee_sp_range <- which(names(bee_data) == "Andrena aeneiventris"):which(names(bee_data) == "Stelis punctulatissima")
+
+# Richness
+bee_data$bee_richness <- rowSums(bee_data[, bee_sp_range] > 0, na.rm = TRUE)
+
+# Abundance without fieldID
+bee_data$bee_abundance_nofieldID <- rowSums(bee_data[, bee_sp_range], na.rm = TRUE)
+
+# Abundance with fieldID
+bee_data$bee_abundance <- bee_data$bee_abundance_nofieldID + bee_data$fieldIDsum
+
 # Hill number for q = 1 (exponential of Shannon)
-bee_data$bee_hill_q1 <- exp(diversity(bee_data[7:151], index = "shannon"))
+bee_data$bee_hill_q1 <- exp(diversity(bee_data[, bee_sp_range], index = "shannon"))
 
 # Hill number for q = 2 (inverse Simpson)
-bee_data$bee_hill_q2 <- diversity(bee_data[7:151], index = "invsimpson")
+bee_data$bee_hill_q2 <- diversity(bee_data[, bee_sp_range], index = "invsimpson")
+
+# Plots with 0 bees return Inf - convert to NA for interpretability
+bee_data$bee_hill_q2 <- ifelse(bee_data$bee_richness == 0, NA, bee_data$bee_hill_q2)
+
 ```
+
+Compute Bee Red List Metrics
+```{r Bee Red List Metrics}
+# RL METRICS
+rl_abundance <- beedata |>
+  filter(!is.na(RLstatus)) |>
+  group_by(surveyID, RLstatus) |>
+  summarise(n = n(), .groups = "drop") |>
+  pivot_wider(names_from = RLstatus, values_from = n,
+              values_fill = 0, names_prefix = "RLabund_")
+
+rl_richness <- beedata |>
+  filter(!is.na(RLstatus)) |>
+  mutate(bee_species = paste(Gattung, Art)) |>
+  distinct(surveyID, RLstatus, bee_species) |>
+  count(surveyID, RLstatus) |>
+  pivot_wider(names_from = RLstatus, values_from = n,
+              values_fill = 0, names_prefix = "RLrich_")
+
+bee_data <- bee_data |>
+  left_join(rl_abundance, by = "surveyID") |>
+  left_join(rl_richness, by = "surveyID")
+
+for (col in c("RLrich_VU", "RLrich_EN", "RLrich_CR")) {
+  if (!col %in% names(bee_data)) bee_data[[col]] <- 0
+}
+for (col in c("RLabund_VU", "RLabund_EN", "RLabund_CR")) {
+  if (!col %in% names(bee_data)) bee_data[[col]] <- 0
+}
+
+bee_data <- bee_data |>
+  mutate(
+    RLrich_threatened  = RLrich_VU + RLrich_EN + RLrich_CR,
+    RLabund_threatened = RLabund_VU + RLabund_EN + RLabund_CR,
+    RLrich_total       = rowSums(across(starts_with("RLrich_")),  na.rm = TRUE),
+    RLabund_total      = rowSums(across(starts_with("RLabund_")), na.rm = TRUE)
+  )
+```
+
+
 
 # Model data
 Create full dataset for modelling
