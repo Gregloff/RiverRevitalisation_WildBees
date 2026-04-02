@@ -1,0 +1,231 @@
+---
+title: "08_patchiness"
+output: html_document
+---
+```{r load packages}
+library(tidyverse)
+library(vegan)
+library(ggplot2)
+library(ggrepel)
+library(dunn.test)
+```
+
+```{r Load data}
+data_all <- read.csv(file.path("..", "data", "cleaned", "data_all.csv"))
+```
+
+```{r}
+# ─────────────────────────────────────────────
+# HELPER: variable name recoder
+# ─────────────────────────────────────────────
+
+recode_vars <- function(x) case_match(x,
+  "bareground" ~ "Bare ground",
+  "sand"       ~ "Sand",
+  "soil"       ~ "Soil",
+  "herb"       ~ "Herb cover",
+  "woody"      ~ "Woody cover",
+  "vegheight"  ~ "Veg height",
+  "sloped"     ~ "Sloped",
+  "flat"       ~ "Flat",
+  "steep"      ~ "Steep",
+  "hill_q0"    ~ "Floral richness",
+  .default = x
+)
+
+# ─────────────────────────────────────────────
+# 1. SELECT FOCUSED HABITAT VARIABLES
+# ─────────────────────────────────────────────
+
+hab <- data_all %>%
+  select(
+    patchiness,
+    bareground, sand, soil,
+    herb, woody, vegheight, flat,
+    sloped, steep,
+    hill_q0
+  ) %>%
+  drop_na()
+
+cat("Complete rows for PCA:", nrow(hab), "\n")
+cat("Patchiness distribution:\n")
+print(table(hab$patchiness))
+
+# ─────────────────────────────────────────────
+# 2. PCA — habitat vars only, patchiness passive
+# ─────────────────────────────────────────────
+
+hab_vars   <- hab %>% select(-patchiness)
+patchiness <- hab$patchiness
+
+pca_result  <- prcomp(hab_vars, scale. = TRUE, center = TRUE)
+pca_summary <- summary(pca_result)
+print(pca_summary)
+screeplot(pca_result, type = "lines", main = "Scree plot")
+
+# ─────────────────────────────────────────────
+# 3. BIPLOT coloured by patchiness
+# ─────────────────────────────────────────────
+
+var_exp    <- pca_summary$importance[2, 1:2] * 100
+pca_scores <- as.data.frame(pca_result$x[, 1:2])
+pca_scores$patchiness <- as.factor(patchiness)
+
+arrow_scale <- 3
+loadings <- as.data.frame(pca_result$rotation[, 1:2]) %>%
+  rownames_to_column("variable") %>%
+  mutate(
+    PC1s  = PC1 * arrow_scale,
+    PC2s  = PC2 * arrow_scale,
+    label = recode_vars(variable)
+  )
+
+p_biplot <- ggplot(pca_scores, aes(x = PC1, y = PC2, colour = patchiness)) +
+  geom_point(alpha = 0.7, size = 2.5) +
+  scale_colour_manual(
+    values = c("0" = "#d73027", "1" = "#fc8d59",
+               "2" = "#91bfdb", "3" = "#4575b4"),
+    name = "Patchiness"
+  ) +
+  geom_segment(
+    data = loadings,
+    aes(x = 0, y = 0, xend = PC1s, yend = PC2s),
+    arrow = arrow(length = unit(0.25, "cm")),
+    colour = "grey30", linewidth = 0.6,
+    inherit.aes = FALSE
+  ) +
+  geom_text_repel(
+    data = loadings,
+    aes(x = PC1s, y = PC2s, label = label),
+    colour = "grey15", size = 3.2,
+    inherit.aes = FALSE,
+    box.padding = 0.4
+  ) +
+  labs(
+    x     = paste0("PC1 (", round(var_exp[1], 1), "% variance)"),
+    y     = paste0("PC2 (", round(var_exp[2], 1), "% variance)"),
+    title = "PCA of habitat variables — patchiness as passive variable"
+  ) +
+  theme_bw(base_size = 12)
+
+print(p_biplot)
+
+# ─────────────────────────────────────────────
+# 4. ENVFIT — patchiness as env vector
+# ─────────────────────────────────────────────
+
+ef <- envfit(
+  ord          = pca_result$x[, 1:2],
+  env          = data.frame(patchiness = patchiness),
+  permutations = 999
+)
+print(ef)
+
+ef_coords <- as.data.frame(scores(ef, display = "vectors")) * arrow_scale
+ef_coords$variable <- rownames(ef_coords)
+
+p_biplot +
+  geom_segment(
+    data = ef_coords,
+    aes(x = 0, y = 0, xend = PC1, yend = PC2),
+    arrow = arrow(length = unit(0.3, "cm")),
+    colour = "black", linewidth = 1,
+    inherit.aes = FALSE
+  ) +
+  geom_text_repel(
+    data = ef_coords,
+    aes(x = PC1, y = PC2, label = "Patchiness"),
+    colour = "black", size = 3.8, fontface = "bold",
+    inherit.aes = FALSE
+  ) +
+  labs(title = "PCA with patchiness fitted as environmental vector (envfit)")
+
+# ─────────────────────────────────────────────
+# 5. SPEARMAN CORRELATIONS
+# ─────────────────────────────────────────────
+
+cor_results <- hab_vars %>%
+  summarise(across(everything(),
+                   ~ cor(.x, patchiness,
+                         method = "spearman",
+                         use    = "complete.obs"))) %>%
+  pivot_longer(everything(),
+               names_to  = "variable",
+               values_to = "spearman_rho") %>%
+  mutate(variable = recode_vars(variable)) %>%
+  arrange(desc(abs(spearman_rho)))
+
+print(cor_results)
+
+# ─────────────────────────────────────────────
+# 6. KRUSKAL-WALLIS
+# ─────────────────────────────────────────────
+
+kw_results <- hab_vars %>%
+  summarise(across(everything(),
+                   ~ kruskal.test(.x,
+                                  g = as.factor(patchiness))$p.value)) %>%
+  pivot_longer(everything(),
+               names_to  = "variable",
+               values_to = "KW_pvalue") %>%
+  mutate(
+    sig      = case_when(
+      KW_pvalue < 0.001 ~ "***",
+      KW_pvalue < 0.01  ~ "**",
+      KW_pvalue < 0.05  ~ "*",
+      TRUE              ~ "ns"
+    ),
+    variable = recode_vars(variable)
+  ) %>%
+  arrange(KW_pvalue)
+
+print(kw_results)
+
+# ─────────────────────────────────────────────
+# 7. DUNN POST-HOC for key variables
+# ─────────────────────────────────────────────
+
+key_vars <- c("hill_q0", "bareground", "vegheight", "herb", "woody")
+
+for (v in key_vars) {
+  cat("\n── Dunn test:", recode_vars(v), "──\n")
+  dunn.test(hab_vars[[v]],
+            g      = as.factor(patchiness),
+            method = "bonferroni",
+            kw     = TRUE)
+}
+
+# ─────────────────────────────────────────────
+# 8. SUMMARY TABLE
+# ─────────────────────────────────────────────
+
+summary_table <- left_join(cor_results, kw_results, by = "variable") %>%
+  arrange(desc(abs(spearman_rho)))
+
+print(summary_table)
+
+# ─────────────────────────────────────────────
+# 9. BOXPLOTS
+# ─────────────────────────────────────────────
+
+hab %>%
+  select(patchiness, all_of(key_vars)) %>%
+  pivot_longer(-patchiness,
+               names_to  = "variable",
+               values_to = "value") %>%
+  mutate(
+    patchiness = as.factor(patchiness),
+    variable   = recode_vars(variable)
+  ) %>%
+  ggplot(aes(x = patchiness, y = value, fill = patchiness)) +
+  geom_boxplot(alpha = 0.7, outlier.size = 1) +
+  scale_fill_manual(values = c("0" = "#d73027", "1" = "#fc8d59",
+                               "2" = "#91bfdb", "3" = "#4575b4")) +
+  facet_wrap(~variable, scales = "free_y") +
+  labs(x     = "Patchiness score",
+       y     = "Value",
+       title = "Habitat variables by patchiness score") +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "none")
+```
+
