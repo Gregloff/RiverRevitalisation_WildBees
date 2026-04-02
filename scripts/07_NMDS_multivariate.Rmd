@@ -112,7 +112,7 @@ anova(betadisp)
 
 ```{r}
 # ---- Update these variable names to match your dataset ----
-env_vars <- bee_data %>%
+env_vars <- mapp_data %>%
   select(plotID, flower_richness, veg_height, bare_ground, temperature) %>%
   distinct()
 
