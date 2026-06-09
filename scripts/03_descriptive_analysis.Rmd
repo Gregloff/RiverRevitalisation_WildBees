@@ -5,12 +5,15 @@ output: html_document
 ```{r}
 library(dplyr)
 library(ggplot2)
+library(ggVennDiagram)
+library(grid)
 library(patchwork)
 library(posterior)
 library(purrr)
 library(stringr)
 library(tidyr)
 library(tidyverse)
+library(VennDiagram)
 ```
 
 ```{r Load data}
@@ -26,7 +29,7 @@ mapp_data  <- read_cleaned("mapp_data.csv")
 bee_data      <- read_cleaned("bee_data.csv")
 ```
 
-# Descriptive analysis plant data
+# Plant data
 ```{r plant data Wilcoxon tests Abundance and Richness}
 ## Richness
 # Wilcoxon test Richness overall site comparison (all visits combined)
@@ -470,7 +473,7 @@ hill_q2_patchwork
 
 ```
 
-# Descriptive analysis habitat mapping
+# Habitat mapping
 ```{r mapp_data patchiness plot}
 
 safe_wilcox <- function(df) {
@@ -537,7 +540,7 @@ patchiness_patchwork
 ```
 
 
-# Descriptive analysis bee data
+# Bee data
 ```{r bee data overview numbers}
 # total species count
 length(which(names(bee_data) == "Andrena aeneiventris"):
@@ -561,45 +564,93 @@ sum(control_pres)
 sum(focal_pres)
 
 ```
+
+Venn Diagram of species composition
+```{r}
+# Get species present in each site type
+species_focal   <- names(which(colSums(bee_data[bee_data$site == "focal",   species_cols] > 0, na.rm = TRUE) > 0))
+species_control <- names(which(colSums(bee_data[bee_data$site == "control", species_cols] > 0, na.rm = TRUE) > 0))
+
+# Quick check
+length(species_focal)
+length(species_control)
+length(intersect(species_focal, species_control))
+
+n_focal      <- length(species_focal)
+n_control    <- length(species_control)
+n_shared     <- length(intersect(species_focal, species_control))
+n_only_focal   <- n_focal   - n_shared
+n_only_control <- n_control - n_shared
+
+grid.newpage()
+venn <- draw.pairwise.venn(
+  area1          = n_focal,
+  area2          = n_control,
+  cross.area     = n_shared,
+  category       = c("Focal", "Control"),
+  fill           = c("#2C7FB8", "#D95F09"),
+  alpha          = 0.4,
+  col            = "white",
+  cex            = 1.8,
+  cat.cex        = 1.5,
+  cat.col        = c("#2C7FB8", "#D95F09"),
+  cat.fontface   = "bold",
+  fontfamily     = "sans",
+  cat.fontfamily = "sans",
+  margin         = 0.08,
+  cat.pos        = c(-20, 20),
+  cat.dist       = 0.06
+)
+```
+
+```{r print venn diagram bee species by site}
+tiff("../output/figures/venn_species_sites.tiff",
+     width = 3000, height = 2500, res = 600, compression = "lzw")
+grid.draw(venn)
+dev.off()
+```
+
 ```{r species accumulation curve}
 
 p_accumsite <- function() {
-
-  colnames(bee_data)
-
-  bee_matrix <- bee_data[, !(names(bee_data) %in% c(
+  # --- 1. Define metadata columns to exclude ---
+  meta_cols <- c(
     "surveyID","plotID","site","region","visit","plot",
-    "richness","fieldIDsum","bee_abundance_nofieldID","bee_abundance",
+    "fieldIDsum","bee_richness","bee_abundance_nofieldID","bee_abundance",
+    "bee_hill_q1","bee_hill_q2",
     "RLabund_LC","RLabund_NT","RLabund_VU","RLabund_EN","RLabund_DD",
     "RLrich_LC","RLrich_NT","RLrich_VU","RLrich_EN","RLrich_DD",
-    "RLrich_CR","RLabund_CR","RLrich_threatened","RLabund_threatened",
-    "RLrich_total","RLabund_total"))]
+    "RLrich_CR","RLabund_CR",
+    "RLrich_threatened","RLabund_threatened",
+    "RLrich_total","RLabund_total"
+  )
 
-  spec_accum <- specaccum(bee_matrix, method = "random")
+  # --- 2. Keep only species matrix ---
+  bee_matrix <- bee_data %>%
+    select(-all_of(meta_cols))
 
+  # Safety checks
+  stopifnot(all(sapply(bee_matrix, is.numeric)))
+  stopifnot(ncol(bee_matrix) > 0)
+
+  # --- 3. Split by treatment ---
+  bee_matrix_control <- bee_matrix[bee_data$site == "control", ]
+  bee_matrix_focal   <- bee_matrix[bee_data$site == "focal",   ]
+
+  # --- 5. Run accumulation ---
+  bee_accum_control <- specaccum(bee_matrix_control, method = "random")
+  bee_accum_focal   <- specaccum(bee_matrix_focal,   method = "random")
+
+  # --- 6. Colors ---
   site_cols <- list(
     focal   = "#2C7FB8",
     control = "#D95F09"
   )
+
   site_cols$focal_light   <- adjustcolor(site_cols$focal,   alpha.f = 0.25)
   site_cols$control_light <- adjustcolor(site_cols$control, alpha.f = 0.25)
 
-  plot(spec_accum,
-       xlab = "Number of surveys (plot visits)",
-       ylab = "Accumulated species richness",
-       main = "Species Accumulation Curve",
-       ci.type = "polygon",
-       col = "#C71586",
-       lwd = 2,
-       ci.col = adjustcolor("#C71586", alpha.f = 0.25),
-       ci.lty = 0)
-
-  bee_matrix_control <- bee_matrix[bee_data$site == "control", ]
-  bee_matrix_focal   <- bee_matrix[bee_data$site == "focal",   ]
-
-  bee_accum_control <- specaccum(bee_matrix_control, method = "random")
-  bee_accum_focal   <- specaccum(bee_matrix_focal,   method = "random")
-
+  # --- 7. Compute Y limits safely ---
   ylim_all <- range(
     c(bee_accum_control$richness - bee_accum_control$sd,
       bee_accum_control$richness + bee_accum_control$sd,
@@ -608,6 +659,7 @@ p_accumsite <- function() {
     na.rm = TRUE
   )
 
+  # --- 8. Plot control ---
   plot(bee_accum_control,
        xlab = "Number of surveys (plot visits)",
        ylab = "Accumulated species richness",
@@ -619,6 +671,7 @@ p_accumsite <- function() {
        ci.lty = 0,
        ylim   = ylim_all)
 
+  # --- 9. Add focal ---
   plot(bee_accum_focal,
        add    = TRUE,
        col    = site_cols$focal,
@@ -627,14 +680,18 @@ p_accumsite <- function() {
        ci.col = site_cols$focal_light,
        ci.lty = 0)
 
+  # --- 10. Legend ---
   legend("bottomright",
          legend = c("Control", "Focal"),
          col    = c(site_cols$control, site_cols$focal),
          lwd    = 2,
          bty    = "n")
 }
+
 p_accumsite()
+
 ```
+
 
 
 ```{r print species accumulation cirve by site}
@@ -647,6 +704,111 @@ p_accumsite()
 dev.off()
 ```
 
+Species accumulation curve by region per site type
+```{r}
+p_accumregion <- function() {
+  # --- 1. Metadata ---
+  meta_cols <- c(
+    "surveyID","plotID","site","region","visit","plot",
+    "fieldIDsum","bee_richness","bee_abundance_nofieldID","bee_abundance",
+    "bee_hill_q1","bee_hill_q2",
+    "RLabund_LC","RLabund_NT","RLabund_VU","RLabund_EN","RLabund_DD",
+    "RLrich_LC","RLrich_NT","RLrich_VU","RLrich_EN","RLrich_DD",
+    "RLrich_CR","RLabund_CR",
+    "RLrich_threatened","RLabund_threatened",
+    "RLrich_total","RLabund_total"
+  )
+
+  # --- 2. Species matrix ---
+  bee_matrix <- bee_data %>%
+    select(-all_of(meta_cols))
+
+  # --- 3. Colors ---
+  site_cols <- list(
+    focal   = "#2C7FB8",
+    control = "#D95F09"
+  )
+
+  site_cols$focal_light   <- adjustcolor(site_cols$focal,   alpha.f = 0.25)
+  site_cols$control_light <- adjustcolor(site_cols$control, alpha.f = 0.25)
+
+  # --- 4. Regions ---
+  regions <- unique(bee_data$region)
+
+  # --- 5. 4-panel layout ---
+  par(mfrow = c(2, 2), mar = c(4, 4, 3, 1))
+
+  # --- 6. Loop over regions ---
+  for (reg in regions) {
+
+    # subset data
+    idx_region <- bee_data$region == reg
+
+    mat_region <- bee_matrix[idx_region, ]
+    site_region <- bee_data$site[idx_region]
+
+    # split by site
+    mat_control <- mat_region[site_region == "control", ]
+    mat_focal   <- mat_region[site_region == "focal", ]
+
+    # --- IMPORTANT: keep OR remove empty samples depending on your choice ---
+    # Uncomment if you want filtered version:
+    # mat_control <- mat_control[rowSums(mat_control) > 0, ]
+    # mat_focal   <- mat_focal[rowSums(mat_focal) > 0, ]
+
+    # safety check
+    if (nrow(mat_control) == 0 | nrow(mat_focal) == 0) {
+      plot.new()
+      title(main = paste(reg, "(no data)"))
+      next
+    }
+
+    # accumulation
+    acc_control <- specaccum(mat_control, method = "random")
+    acc_focal   <- specaccum(mat_focal,   method = "random")
+
+    # shared y-axis limits per panel
+    ylim_all <- range(
+      c(acc_control$richness - acc_control$sd,
+        acc_control$richness + acc_control$sd,
+        acc_focal$richness   - acc_focal$sd,
+        acc_focal$richness   + acc_focal$sd),
+      na.rm = TRUE
+    )
+
+    # plot control
+    plot(acc_control,
+         xlab = "Number of surveys",
+         ylab = "Accumulated richness",
+         main = reg,
+         col = site_cols$control,
+         lwd = 2,
+         ci.type = "polygon",
+         ci.col = site_cols$control_light,
+         ci.lty = 0,
+         ylim = ylim_all)
+
+    # add focal
+    plot(acc_focal,
+         add = TRUE,
+         col = site_cols$focal,
+         lwd = 2,
+         ci.type = "polygon",
+         ci.col = site_cols$focal_light,
+         ci.lty = 0)
+
+    # legend inside each panel
+    legend("bottomright",
+           legend = c("Control", "Focal"),
+           col = c(site_cols$control, site_cols$focal),
+           lwd = 2,
+           bty = "n",
+           cex = 0.8)
+  }
+}
+
+p_accumregion()
+```
 
 
 ```{r bee data wilcoxon tests}
@@ -1428,3 +1590,302 @@ ggplot(rl_abund_fc, aes(x = site, y = value, fill = site)) +
   scale_fill_manual(values = c("control" = "#1b9e77", "focal" = "#d95f02"))
 
 ```
+
+
+```{r species accumulation by site}
+# Species matrix (clean)
+start <- match("Andrena aeneiventris", names(bee_data))
+end   <- match("Stelis punctulatissima", names(bee_data))
+bee_matrix <- bee_data[, start:end]
+
+# Optional but recommended
+bee_matrix[is.na(bee_matrix)] <- 0
+
+# Split by site
+mat_control <- bee_matrix[bee_data$site == "control", ]
+mat_focal   <- bee_matrix[bee_data$site == "focal",   ]
+
+# Safety checks
+if (nrow(mat_control) < 2 | nrow(mat_focal) < 2) {
+  stop("Not enough data for one of the site types.")
+}
+
+if (sum(mat_control) == 0 | sum(mat_focal) == 0) {
+  stop("One site type has no species records.")
+}
+
+# Accumulation curves
+acc_control <- specaccum(mat_control, method = "random")
+acc_focal   <- specaccum(mat_focal,   method = "random")
+
+# Y axis
+ymax <- max(
+  acc_control$richness + acc_control$sd,
+  acc_focal$richness   + acc_focal$sd,
+  na.rm = TRUE
+)
+
+if (!is.finite(ymax)) {
+  stop("Invalid ymax (check data)")
+}
+
+# Colors
+col_control <- "#2C7FB8"
+col_focal   <- "#D95F09"
+
+# Plot
+plot(acc_control,
+     xlab = "Number of surveys (plot visits)",
+     ylab = "Accumulated species richness",
+     main = "Species Accumulation: Control vs Focal",
+     ci.type = "polygon",
+     col    = col_control,
+     ci.col = adjustcolor(col_control, 0.3),
+     lwd    = 2,
+     ylim   = c(0, ymax))
+
+plot(acc_focal,
+     add = TRUE,
+     col    = col_focal,
+     ci.col = adjustcolor(col_focal, 0.3),
+     ci.type = "polygon",
+     lwd    = 2)
+
+legend("bottomright",
+       legend = c("Control", "Focal"),
+       col    = c(col_control, col_focal),
+       lwd    = 2,
+       bty    = "n")
+```
+```{r accumulatin curve by site and region}
+# Species matrix (safe + clean)
+start <- match("Andrena aeneiventris", names(bee_data))
+end   <- match("Stelis punctulatissima", names(bee_data))
+bee_matrix <- bee_data[, start:end]
+bee_matrix[is.na(bee_matrix)] <- 0
+
+# Regions
+regions <- unique(bee_data$region)
+
+# Layout (adjust rows/cols depending on number of regions)
+par(mfrow = c(ceiling(length(regions)/2), 2))
+
+for (r in regions) {
+
+  # Subset region
+  idx <- bee_data$region == r
+  mat_region <- bee_matrix[idx, ]
+  site_region <- bee_data$site[idx]
+
+  mat_control <- mat_region[site_region == "control", ]
+  mat_focal   <- mat_region[site_region == "focal",   ]
+
+  # Skip problematic regions
+  if (nrow(mat_control) < 2 || nrow(mat_focal) < 2) {
+    plot.new()
+    title(main = paste(r, "(insufficient data)"))
+    next
+  }
+
+  if (sum(mat_control) == 0 || sum(mat_focal) == 0) {
+    plot.new()
+    title(main = paste(r, "(no species data)"))
+    next
+  }
+
+  # Accumulation curves
+  acc_control <- specaccum(mat_control, method = "random")
+  acc_focal   <- specaccum(mat_focal,   method = "random")
+
+  # Y limit
+  ymax <- max(
+    acc_control$richness + acc_control$sd,
+    acc_focal$richness   + acc_focal$sd,
+    na.rm = TRUE
+  )
+
+  if (!is.finite(ymax)) {
+    plot.new()
+    title(main = paste(r, "(invalid data)"))
+    next
+  }
+
+  # Colors
+  col_control <- "#2C7FB8"
+  col_focal   <- "#D95F09"
+
+  # Plot control
+  plot(acc_control,
+       xlab = "Number of surveys",
+       ylab = "Accumulated species richness",
+       main = r,
+       ci.type = "polygon",
+       col    = col_control,
+       ci.col = adjustcolor(col_control, 0.3),
+       lwd    = 2,
+       ylim   = c(0, ymax))
+
+  # Add focal
+  plot(acc_focal,
+       add = TRUE,
+       col    = col_focal,
+       ci.col = adjustcolor(col_focal, 0.3),
+       ci.type = "polygon",
+       lwd    = 2)
+
+  # Legend
+  legend("bottomright",
+         legend = c("Control", "Focal"),
+         col    = c(col_control, col_focal),
+         lwd    = 2,
+         bty    = "n",
+         cex    = 0.9)
+}
+
+# Reset layout
+par(mfrow = c(1, 1))
+```
+
+```{r bee curve species richness by number collected}
+# Species matrix
+start <- match("Andrena aeneiventris", names(bee_data))
+end   <- match("Stelis punctulatissima", names(bee_data))
+bee_matrix <- bee_data[, start:end]
+bee_matrix[is.na(bee_matrix)] <- 0
+
+# Split
+mat_control <- bee_matrix[bee_data$site == "control", ]
+mat_focal   <- bee_matrix[bee_data$site == "focal",   ]
+
+# Totals
+N_control <- sum(mat_control)
+N_focal   <- sum(mat_focal)
+
+# Permutations
+n_perm <- 200
+set.seed(123)
+
+# ---- CONTROL ----
+vec_control <- rep(colnames(mat_control), colSums(mat_control))
+acc_control <- matrix(NA, nrow = n_perm, ncol = N_control)
+
+for (p in 1:n_perm) {
+  indiv <- sample(vec_control)
+  acc_control[p, ] <- cumsum(!duplicated(indiv))
+}
+
+# ---- FOCAL ----
+vec_focal <- rep(colnames(mat_focal), colSums(mat_focal))
+acc_focal <- matrix(NA, nrow = n_perm, ncol = N_focal)
+
+for (p in 1:n_perm) {
+  indiv <- sample(vec_focal)
+  acc_focal[p, ] <- cumsum(!duplicated(indiv))
+}
+
+# Mean + CI
+mean_control <- colMeans(acc_control)
+mean_focal   <- colMeans(acc_focal)
+
+lower_control <- apply(acc_control, 2, quantile, 0.025)
+
+upper_control <- apply(acc_control, 2, quantile, 0.975)
+
+lower_focal <- apply(acc_focal, 2, quantile, 0.025)
+upper_focal <- apply(acc_focal, 2, quantile, 0.975)
+
+# X axes
+x_control <- 1:N_control
+x_focal   <- 1:N_focal
+
+# Colors
+col_control <- "#2C7FB8"
+col_focal   <- "#D95F09"
+
+# Plot limits
+xmax <- max(N_control, N_focal)
+ymax <- max(upper_control, upper_focal)
+
+# ---- PLOT ----
+plot(0, 0,
+     type = "n",
+     xlim = c(0, xmax),
+     ylim = c(0, ymax),
+     xlab = "Number of bees (individuals)",
+     ylab = "Accumulated species richness",
+     main = "Species accumulation by individuals")
+
+# Control ribbon
+polygon(c(x_control, rev(x_control)),
+        c(upper_control, rev(lower_control)),
+        col = adjustcolor(col_control, 0.25),
+        border = NA)
+
+# Focal ribbon
+polygon(c(x_focal, rev(x_focal)),
+        c(upper_focal, rev(lower_focal)),
+        col = adjustcolor(col_focal, 0.25),
+        border = NA)
+
+# Lines
+lines(x_control, mean_control, col = col_control, lwd = 2.5)
+lines(x_focal,   mean_focal,   col = col_focal,   lwd = 2.5)
+
+# Legend
+legend("bottomright",
+       legend = c(
+         paste0("Control (n=", N_control, ")"),
+         paste0("Focal (n=", N_focal, ")")
+       ),
+       col = c(col_control, col_focal),
+       lwd = 2.5,
+       bty = "n")
+
+```
+
+```{r NMDS bee communities by region and site}
+# Species matrix indices
+start <- match("Andrena aeneiventris", names(bee_data))
+end   <- match("Stelis punctulatissima", names(bee_data))
+species_cols <- start:end
+
+regions <- unique(bee_data$region)
+
+for (r in regions) {
+
+  # Subset region
+  dat <- bee_data %>% filter(region == r)
+
+  # Pool plots within site × visit
+  dat_pool <- dat %>%
+    group_by(site, visit) %>%
+    summarise(across(all_of(names(bee_data)[species_cols]), sum), .groups = "drop")
+
+  # Community matrix
+  comm <- as.matrix(dat_pool[, names(bee_data)[species_cols]])
+
+  # NMDS
+  nmds <- metaMDS(comm, distance = "bray", k = 2, trymax = 100)
+
+  # Plot
+  plot(nmds, type = "n", main = paste("NMDS –", r))
+
+  # Colors
+  cols <- ifelse(dat_pool$site == "control", "#2C7FB8", "#D95F09")
+
+  points(nmds, col = cols, pch = 19)
+
+  # Optional: group ellipses
+  ordiellipse(nmds, dat_pool$site,
+              col = c("#2C7FB8", "#D95F09"),
+              lwd = 2)
+
+  legend("topright",
+         legend = c("Control", "Focal"),
+         col = c("#2C7FB8", "#D95F09"),
+         pch = 19,
+         bty = "n")
+}
+
+```
+

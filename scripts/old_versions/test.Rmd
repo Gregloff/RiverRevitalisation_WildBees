@@ -1926,7 +1926,7 @@ for (r in regions) {
   bee_reg <- bee_data[bee_data$region == r, ]
   bee_mat <- bee_reg[, !(names(bee_reg) %in% c(
     "surveyID", "plotID", "site", "region", "visit", "plot",
-    "richness", "fieldIDsum", "bee_abundance_nofieldID", "bee_abundance",
+    "fieldIDsum", "bee_abundance_nofieldID", "bee_abundance",
     "RLabund_LC", "RLabund_NT", "RLabund_VU", "RLabund_EN", "RLabund_DD",
     "RLrich_LC", "RLrich_NT", "RLrich_VU", "RLrich_EN", "RLrich_DD",
     "RLrich_CR", "RLabund_CR", "RLrich_threatened", "RLabund_threatened",
@@ -1938,7 +1938,8 @@ for (r in regions) {
   acc_f <- specaccum(mat_f, method = "random")
   ymax <- max(
     acc_c$richness + acc_c$sd,
-    acc_f$richness + acc_f$sd
+    acc_f$richness + acc_f$sd,
+    na.rm = TRUE
   )
   
   plot(acc_c,

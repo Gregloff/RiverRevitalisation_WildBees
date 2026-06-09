@@ -1,6 +1,6 @@
 ---
 title: "06_habvariables_multimodel"
-output: html_document
+output: word_document
 output_dir: "knit"
 ---
 
@@ -8,9 +8,11 @@ output_dir: "knit"
 library(tidyverse)
 library(ggeffects)
 library(glmmTMB)
+library(gt)
 library(car)
 library(DHARMa)
 library(patchwork)
+library(performance)
 library(MuMIn)
 library(vegan)
 library(iNEXT)
@@ -23,10 +25,6 @@ library(broom.mixed)
 ```{r Load data}
 data_all_scaled <- readRDS(file.path("..", "data", "cleaned", "data_all_scaled.rds"))
 ```
-Slope is at plot level because only plots have repeated measures
-Region remains a random intercept to capture large-scale spatial structure
-No need for site as fixed or random because you use plot-level predictors
- (1 | region) + (1 + visit | plotID) 
 
 Test correlation between differenct bee metrics
 ```{r}
@@ -42,101 +40,14 @@ cor_matrix <- cor(
 
 cor_matrix
 ```
-Because all plots were surveyed with identical sampling effort (same area, same method, same observer, same frequency), rarefaction was not applied. Raw abundance, richness, and Hill diversity values were directly comparable across samples. Given the high correlation between HIll q = 1 and HIll q = 2 values, I only run abudnance, richness, and HIll q = 1 models in parallel.
+Because all plots were surveyed with identical sampling effort (same area, same method, same observer, same frequency), rarefaction was not applied. Raw abundance, richness, and Hill diversity values were directly comparable across samples. Given the high correlation between Hill q = 1 and HIll q = 2 values, I run abundance, richness, and HIil q = 1 models in parallel.
 Rarefaction would artificially reduce information content and compromise the GLMM structure. Therefore, analyses were conducted using raw count-based response variables standardized by equal sample effort.
- 
-## Bee abundance models
 
-Bee ab model prep:
-```{r bee Poisson ab model prep: overdispersion test, response data distribution}
-#baseline poisson null model
-m_pois <- glmmTMB(
-  bee_abundance ~ 1 +
-    (1 | region) +
-    (1 + visit | plotID),
-  data = data_all_scaled,
-  family = poisson
-)
-
-summary(m_pois)
-
-#test for overdispersion
-overdisp_fun <- function(model) {
-  rdf <- df.residual(model)
-  rp <- residuals(model, type = "pearson")
-  Pearson.chisq <- sum(rp^2)
-  ratio <- Pearson.chisq / rdf
-  pval <- pchisq(Pearson.chisq, df = rdf, lower.tail = FALSE)
-  c(chisq = Pearson.chisq, ratio = ratio, rdf = rdf, p = pval)
-}
-
-overdisp_fun(m_pois) #clear overdispersion
-
-sim_pois <- simulateResiduals(m_pois)
-plot(sim_pois)
-testDispersion(sim_pois)
-testZeroInflation(sim_pois)
-```
-```{r bee nbinom2 ab model prep: overdispersion test, response data distribution}
-m_nb <- glmmTMB(
-  bee_abundance ~ 1 +
-    (1 | region) +
-    (1 + visit | plotID),
-  data = data_all_scaled,
-  family = nbinom2
-)
-summary(m_nb)
-
-sim_nb <- simulateResiduals(m_nb)
-plot(sim_nb)
-testDispersion(sim_nb)
-testZeroInflation(sim_nb)
-```
-
-KS test for nbinom2 shows significant deviation, try nbinom1 
-```{r bee nbinom1 ab model prep: overdispersion test, response data distribution}
-m_nb <- glmmTMB(
-  bee_abundance ~ 1 +
-    (1 | region) +
-    (1 + visit | plotID),
-  data = data_all_scaled,
-  family = nbinom1
-)
-summary(m_nb)
-
-sim_nb <- simulateResiduals(m_nb)
-plot(sim_nb)
-testDispersion(sim_nb)
-testZeroInflation(sim_nb)
-```
-nbinom1 fits better - use this from now on
-"It is common that the KS test shows significance even when the model is fine.
-Minor deviations in QQ plots without patterns in other tests do not require fixing."
-
-```{r bee nbinom1 ab model with different random effects structure}
-m_nb_simple <- glmmTMB(
-  bee_abundance ~ 1 +
-    (1 + visit | plotID),
-  data = data_all_scaled,
-  family = nbinom1
-)
-summary(m_nb_simple)
-
-sim_nb_simple <- simulateResiduals(m_nb_simple)
-plot(sim_nb_simple)
-testDispersion(sim_nb_simple)
-testZeroInflation(sim_nb_simple)
-```
-We initially considered a random-effects structure reflecting the sampling design, including random intercepts for region, sites nested within region, and random slopes of visit within plots.
-However, region exibited near-zero variance without improving model fit.
-Following Bates et al. (2015) and Harrison et al. (2018), we retained only the random intercept for plotID, which was strongly supported by the data and reflected the clustering of repeated surveys within plots.
-Additional hierarchical levels (region, site) were included as fixed effects where biologically relevant.
+“Bee abundance, species richness, and Hill diversity metrics were strongly correlated (Spearman ρ = 0.75–0.99). To avoid redundant inference, we focused on abundance and richness as primary response variables, and used Hill q1 as a complementary diversity metric. Hill q2 was excluded due to near‑perfect correlation with Hill q1.”
 gpt
-(Variance estimates showed that the region-level variance was near zero (1.2×10⁻⁷),
-ICC values and conditional R² confirmed that these additional random effects explained no additional hierarchical variation.
-Model diagnostics (DHARMa) indicated no improvement in dispersion, zero-inflation, or residual structure.
-Following Bates et al. (2015) and Harrison et al. (2018), we therefore selected the more parsimonious random-effects structure (1|plotID), which was strongly supported by the data and avoided overparameterization.)
 
+
+Collinearity tests environmental variables§
 ```{r bee ab model prep: test for collinearity among habitat explanatory variables}
 # List of numeric environmental variables
 env_vars <- c("visit", "bareground", "vegcover", "vegheight", "herb", "woody",
@@ -163,8 +74,9 @@ correlated_pairs <- data.frame(
 )
 
 # Remove duplicates (var1-var2 vs var2-var1)
-correlated_pairs[correlated_pairs$var1 < correlated_pairs$var2, ]
+correlated_pairs <- correlated_pairs[correlated_pairs$var1 < correlated_pairs$var2, ]
 
+print(correlated_pairs)
 # visualize correlation
 corrplot(
   cor_matrix,
@@ -341,6 +253,91 @@ ggplot(significant_df, aes(x = reorder(Variable, Estimate), y = Estimate)) +
 ```
 
 
+# Bee abundance
+Bee ab model prep:
+Base Poisson model shows clear zero inflation.
+```{r bee Poisson ab model prep: overdispersion test, response data distribution}
+#baseline poisson null model
+m_pois <- glmmTMB(
+  bee_abundance ~ 1 +
+    (1 | region) +
+    (1 + visit | plotID),
+  data = data_all_scaled,
+  family = poisson
+)
+
+summary(m_pois)
+
+sim_pois <- simulateResiduals(m_pois)
+plot(sim_pois)
+testDispersion(sim_pois)
+testZeroInflation(sim_pois)
+check_model(m_pois)
+```
+
+Comparing nbinom2 and nbinom1 distributions
+```{r bee nbinom2 ab model prep: overdispersion test, response data distribution}
+m_nb <- glmmTMB(
+  bee_abundance ~ 1 +
+    (1 | region) +
+    (1 + visit | plotID),
+  data = data_all_scaled,
+  family = nbinom2
+)
+summary(m_nb)
+
+sim_nb <- simulateResiduals(m_nb)
+plot(sim_nb)
+testDispersion(sim_nb)
+testZeroInflation(sim_nb)
+check_model(m_nb)
+```
+KS test for nbinom2 shows significant deviation
+
+```{r bee nbinom1 ab model prep: overdispersion test, response data distribution}
+m_nb <- glmmTMB(
+  bee_abundance ~ 1 +
+    (1 | region) +
+    (1 + visit | plotID),
+  data = data_all_scaled,
+  family = nbinom1
+)
+summary(m_nb)
+
+sim_nb <- simulateResiduals(m_nb)
+plot(sim_nb)
+testDispersion(sim_nb)
+testZeroInflation(sim_nb)
+```
+nbinom1 fits better - use this from now on
+
+Try model with different random effects structure
+```{r bee nbinom1 ab model with different random effects structure}
+m_nb_simple <- glmmTMB(
+  bee_abundance ~ 1 +
+    (1 + visit | plotID),
+  data = data_all_scaled,
+  family = nbinom1
+)
+summary(m_nb_simple)
+sim_nb_simple <- simulateResiduals(m_nb_simple)
+plot(sim_nb_simple)
+testDispersion(sim_nb_simple)
+testZeroInflation(sim_nb_simple)
+check_model(m_nb_simple)
+```
+We initially considered a random-effects structure reflecting the sampling design, including random intercepts for region, sites nested within region, and random slopes of visit within plots.
+However, region exibited near-zero variance without improving model fit.
+Following Bates et al. (2015) and Harrison et al. (2018), we retained only the random intercept for plotID, which was strongly supported by the data and reflected the clustering of repeated surveys within plots.
+Additional hierarchical levels (region, site) were included as fixed effects where biologically relevant.
+gpt
+(Variance estimates showed that the region-level variance was near zero (1.2×10⁻⁷),
+ICC values and conditional R² confirmed that these additional random effects explained no additional hierarchical variation.
+Model diagnostics (DHARMa) indicated no improvement in dispersion, zero-inflation, or residual structure.
+Following Bates et al. (2015) and Harrison et al. (2018), we therefore selected the more parsimonious random-effects structure (1|plotID), which was strongly supported by the data and avoided overparameterization.)
+gpt
+
+
 Build multivariate model for bee abundance
 
 only adding plotID as random effect as
@@ -352,7 +349,7 @@ fixed effects behave cleanly and consistently
 ```{r Bee abundance global model}
 AB_glmm <- glmmTMB(
   bee_abundance ~
-    hill_q0 + sand + herb + bareground + vegheight + patchiness_ord +
+    hill_q0 + sand + herb + bareground + vegheight + patchiness_ord+
     (1 + visit | plotID),
   family = nbinom1,
   data = data_all_scaled,
@@ -360,9 +357,7 @@ AB_glmm <- glmmTMB(
 )
 print(summary(AB_glmm))
 
-vif(lm(bee_abundance ~ hill_q0 + sand + soil + vegheight + patchiness_ord,
-       data = data_all_scaled))
-#all values below 3 - no multicollinearity 
+check_model(AB_glmm)
 ```
 1. Correlation = –0.98 → essentially singular
 2. Slope variance tiny → slope not informative
@@ -376,7 +371,7 @@ he random slope variance was very small (σ² = 0.039), and the intercept–slop
 According to Bates et al. (2015) and Harrison et al. (2018), such correlations signal that the random slope is not supported by the data and should be removed.
 Simplifying to (1 | plotID) produced stable models without affecting fixed-effect inference.
 We therefore retained the simpler random-effects structure in all models.
-gpt 
+gpt
 
 Remove visit from random effects structure
 ```{r Bee abundance global model without visit as random slope}
@@ -390,9 +385,7 @@ AB_glmm <- glmmTMB(
 )
 print(summary(AB_glmm))
 
-vif(lm(bee_abundance ~ hill_q0 + sand + bareground + vegheight + patchiness_ord,
-       data = data_all_scaled))
-#all values below 3 - no multicollinearity 
+check_model(AB_glmm)
 ```
 
 ```{r Bee abundance dredge}
@@ -400,33 +393,32 @@ dd <- dredge(AB_glmm, rank = "AICc", trace = 2)
 dd
 
 head(dd)
-
-# best model (to be used later for ggpred)
-bestmod_ab <- cand[[1]]
 ```
 
 ```{r model averaging abundance}
-cand <- get.models(dd, subset = delta <= 2)
+cand_ab <- get.models(dd, subset = delta <= 2)
 
-avg_mod <- model.avg(cand, revised.var = TRUE)
-summary(avg_mod)
-confint(avg_mod)
+# best model (to be used later for ggpred)
+bestmod_ab <- cand_ab[[1]]
+
+avg_mod_ab <- model.avg(cand_ab, revised.var = TRUE)
+summary(avg_mod_ab)
+confint(avg_mod_ab)
 
 # Sum of weights can be calculated like that
 sw(subset(dd, delta <= 2))
 ```
 
-```{r falcon plot model average - abundance}
-
+```{r forest plot model average - abundance}
 # 1. PREP COEFFICIENTS (model.avg output)
-coef_df <- as.data.frame(summary(avg_mod)$coefmat.full)
+coef_df <- as.data.frame(summary(avg_mod_ab)$coefmat.full)
 coef_df$term <- rownames(coef_df)
 
 # Remove intercept
 coef_df <- coef_df[coef_df$term != "cond((Int))", ]
 
 # Add CI
-ci <- confint(avg_mod)
+ci <- confint(avg_mod_ab)
 coef_df$lower <- ci[coef_df$term, 1]
 coef_df$upper <- ci[coef_df$term, 2]
 
@@ -470,7 +462,7 @@ coef_df$clean_label <- coef_df$term %>%
 
 # 5. plot
 
-p_falcon_ab <- ggplot(coef_df, aes(x = Estimate, y = reorder(clean_label, Estimate))) +
+p_forest_ab <- ggplot(coef_df, aes(x = Estimate, y = reorder(clean_label, Estimate))) +
   
   geom_errorbarh(aes(xmin = lower, xmax = upper),
                  width = 0,
@@ -497,27 +489,28 @@ p_falcon_ab <- ggplot(coef_df, aes(x = Estimate, y = reorder(clean_label, Estima
   
   labs(
     title = "Model-Averaged Effects on Bee Abundance",
-    subtitle = "Predictors with importance ≥ 0.8 colored in purple",
+    subtitle = "Predictors with importance ≥ 0.8 highlighted purple",
     x = "Model-averaged estimate (95% CI)",
     y = NULL
   )
 
-p_falcon_ab
+p_forest_ab
 
 ```
 Sand cover received moderate support in the model set (importance = 0.82), indicating that it may contribute to explaining variation in bee abundance. Its model‑averaged effect was positive but small (estimate ≈ 0.08–0.10), and the 95% confidence interval slightly overlapped zero, suggesting substantial uncertainty in the strength of this relationship. Thus, sand appears to play a secondary role relative to patchiness and plant diversity.
 Model averaging identified two strongly supported predictors of bee abundance: habitat patchiness and plant species richness (Hill q0), both with importance = 1.0 and positive model‑averaged coefficients whose confidence intervals excluded zero. Sand cover received moderate support (importance = 0.82) and showed a small positive effect, although its confidence interval slightly overlapped zero, indicating some uncertainty. In contrast, herb cover, vegetation height, and bare ground had low importance values (≤ 0.17) and model‑averaged effects near zero, suggesting weak evidence that these variables influence bee abundance. Overall, habitat heterogeneity and floristic richness emerged as the primary predictors of bee abundance.
 gpt
 
-```{r print model avg falcon plot abundance}
+```{r print model avg forest plot abundance}
 tiff(
-  file.path("..", "output", "figures", "falcon_mavgbee_ab_600dpi.tiff"),
+  file.path("..", "output", "figures", "forest_mavgbee_ab_600dpi.tiff"),
   width = 3990, height = 3000, res = 600, compression = "lzw"
 )
 
-print(p_falcon_ab)  
+print(p_forest_ab)  
 dev.off()
 ```
+
 Best model bee abundance
 ```{r best model bee abundance}
 bestmod_ab
@@ -648,7 +641,7 @@ p_combined_abundance <- p_hill + p_patch + p_sand + plot_layout(ncol = 3)
 
 p_combined_abundance
 ```
-We performed an information‑theoretic model selection using AICc and averaged all models within ΔAICc ≤ 2 to account for model‑selection uncertainty. Model‑averaged estimates and variable importance (sum of AICc weights) are presented in the Falcon plot (Fig. X).
+We performed an information‑theoretic model selection using AICc and averaged all models within ΔAICc ≤ 2 to account for model‑selection uncertainty. Model‑averaged estimates and variable importance (sum of AICc weights) are presented in the forest plot (Fig. X).
 Two predictors received full support across the candidate model set (importance = 1.0): habitat patchiness (linear component) and plant diversity Hill q = 0. Both had positive model‑averaged coefficients whose 95% confidence intervals did not overlap zero, indicating that more heterogeneous habitat structure and higher plant species richness were consistently associated with higher bee abundance. Patchiness showed the largest effect size among all predictors.
 Sand cover received intermediate support (importance = 0.78). Its conditional model‑averaged effect was moderately positive and approached statistical significance, suggesting that sand cover may contribute to explaining variation in bee abundance but with greater model uncertainty. In contrast, herb cover (importance = 0.21) and bare ground (importance = 0.16) had low importance values and model‑averaged confidence intervals overlapping zero, indicating weak evidence for any consistent directional effect.
 Overall, the model‑averaged results highlight that habitat structural heterogeneity and plant species richness—rather than vegetation cover or soil surface characteristics—are the primary predictors of bee abundance at the plot level.
@@ -715,8 +708,6 @@ stable random effect
 gpt
 
 Compare random effects structure as in abundance models.
-Given the  hierarchical structure of our data, we try this structure.
-
 ```{r bee nbinom ri model prep: overdispersion test, response data distribution}
 m_nb <- glmmTMB(
   bee_richness ~ 1 +
@@ -735,6 +726,27 @@ testZeroInflation(sim_nb)
 The maximal random-effects structure (1 | region) + (1 + visit | plotID) produced near-zero variance for region and a perfect correlation (±1) between random intercepts and slopes, indicating model singularity and overparameterization (Bates et al. 2015; Harrison et al. 2018). In addition, fixed-effect standard errors were undefined (NaN). We therefore simplified the random structure to a random intercept for plotID, which produced stable estimates and satisfactory diagnostic results.
 gpt
 
+
+```{r Bee richness global model complex}
+RI_glmm <- glmmTMB(
+  bee_richness ~
+    hill_q0 + sand + bareground + herb + vegheight + patchiness_ord +
+    (1 | plotID),
+  family = nbinom2,
+  data = data_all_scaled,
+  na.action = na.fail
+)
+
+print(summary(RI_glmm))
+
+vif(lm(bee_richness ~ hill_q0 + sand + bareground +
+       herb + vegheight + patchiness_ord,
+       data = data_all_scaled))
+#all values below 3 - no multicollinearity 
+
+```
+
+Build global model with simple random effects structure
 ```{r Bee richness global model}
 RI_glmm <- glmmTMB(
   bee_richness ~
@@ -750,8 +762,7 @@ print(summary(RI_glmm))
 vif(lm(bee_richness ~ hill_q0 + sand + bareground +
        herb + vegheight + patchiness_ord,
        data = data_all_scaled))
-#all values below 3 - no multicollinearity 
-
+#all values below 3 - no multicollinearity
 ```
 
 ```{r Bee richness dredge}
@@ -759,23 +770,22 @@ dr <- dredge(RI_glmm, rank = "AICc", trace = 2)
 dr
 
 head(dr)
-
-# best model (to be used later for ggpred)
-cand[[1]]
 ```
 
 ```{r model averaging richness}
-cand <- get.models(dr, subset = delta <= 4)
+cand_ri <- get.models(dr, subset = delta <= 2)
 
-avg_mod_ri <- model.avg(cand, revised.var = TRUE)
+# best model (to be used later for ggpred)
+bestmod_ri <- cand_ri[[1]]
+
+avg_mod_ri <- model.avg(cand_ri, revised.var = TRUE)
 summary(avg_mod_ri)
 
 # Sum of weights can be calculated like that
 sw(subset(dr, delta <= 2))
 ```
 
-
-```{r falcon plot model average - richness}
+```{r forest plot model average - richness}
 # 1. PREP COEFFICIENTS
 coef_df_ri <- as.data.frame(summary(avg_mod_ri)$coefmat.full)
 coef_df_ri$term <- rownames(coef_df_ri)
@@ -813,7 +823,7 @@ coef_df_ri$clean_label <- coef_df$term %>%
   str_replace("patchiness", "Plot heterogeneity")
 
 # 5. PLOT
-p_falcon_ri <- ggplot(coef_df_ri, aes(x = Estimate, y = reorder(clean_label, Estimate))) +
+p_forest_ri <- ggplot(coef_df_ri, aes(x = Estimate, y = reorder(clean_label, Estimate))) +
   geom_errorbarh(aes(xmin = lower, xmax = upper),
                  width = 0, color = coef_df_ri$color, linewidth = 0.8) +
   geom_point(color = coef_df_ri$color, size = 3, stroke = 1) +
@@ -831,21 +841,21 @@ p_falcon_ri <- ggplot(coef_df_ri, aes(x = Estimate, y = reorder(clean_label, Est
   ) +
   labs(
     title = "Model-Averaged Effects on Bee Species Richness",
-    subtitle = "Predictors with importance ≥ 0.8 colored in pink",
+    subtitle = "Predictors with importance ≥ 0.8 highlighted purple",
     x = "Model-averaged estimate (95% CI)",
     y = NULL
   )
 
-p_falcon_ri
+p_forest_ri
 ```
 
-```{r print model avg falcon plot richness}
+```{r print model avg forest plot richness}
 tiff(
-  file.path("..", "output", "figures", "falcon_mavgbee_ri_600dpi.tiff"),
+  file.path("..", "output", "figures", "forest_mavgbee_ri_600dpi.tiff"),
   width = 3990, height = 3000, res = 600, compression = "lzw"
 )
 
-print(p_falcon_ab)  
+print(p_forest_ri)  
 dev.off()
 ```
 
@@ -855,6 +865,7 @@ gpt
 
 Best model bee richness
 ```{r best model bee richness}
+bestmod_ri
 bestmod_ri <- glmmTMB(bee_richness ~ hill_q0 + patchiness_ord + (1 | plotID),
                       family = nbinom1,
                       data = data_all_scaled)
@@ -971,14 +982,20 @@ print(p_combined)
 dev.off()
 ```
 
+
+
+
 # Bee Hill Q = 1
+“Bee abundance and species richness were treated as primary response variables. Hill diversity (q1), which was strongly correlated with richness, was analysed as a complementary metric using a Gamma GLMM. Model averaging was applied to Hillq1 to evaluate whether the same environmental predictors identified for abundance and richness also structured abundance‑weighted diversity. Because Hill q1 is a derived metric and showed minor residual deviations, its results are interpreted as confirmatory rather than independent evidence.”
+gpt
+
 Build base model
 ```{r bee nbinom2 q1 model prep: overdispersion test, response data distribution}
 m_q1 <- glmmTMB(
   bee_hill_q1 ~ 1 +
     (1 | plotID),
   data = data_all_scaled,
-  family = nbinom1
+  family = Gamma(link = "log")
 )
 summary(m_q1)
 
@@ -987,3 +1004,1213 @@ plot(sim_q1)
 testDispersion(sim_q1)
 testZeroInflation(sim_q1)
 ```
+
+```{r Bee hill q1 global model}
+Q1_glmm <- glmmTMB(
+  bee_hill_q1 ~
+    hill_q0 + sand + bareground + herb + vegheight + patchiness_ord +
+    (1 | plotID),
+  family = Gamma(link = "log"),
+  data = data_all_scaled,
+  na.action = na.fail
+)
+
+print(summary(Q1_glmm))
+
+vif(lm(bee_hill_q1 ~ hill_q0 + sand + bareground +
+       herb + vegheight + patchiness_ord,
+       data = data_all_scaled))
+#all values below 3 - no multicollinearity 
+
+sim_Q1_glmm <- simulateResiduals(Q1_glmm)
+plot(sim_Q1_glmm)
+testDispersion(Q1_glmm)
+testZeroInflation(Q1_glmm)
+
+check_model(Q1_glmm)
+```
+
+```{r Bee hill q1 dredge}
+dq <- dredge(Q1_glmm, rank = "AICc", trace = 2)
+dq
+
+head(dq)
+```
+
+```{r model averaging hill q1}
+cand_q1 <- get.models(dq, subset = delta <= 2)
+
+# best model (to be used later for ggpred)
+bestmod_q1 <- cand_q1[[1]]
+
+avg_mod_q1 <- model.avg(cand_q1, revised.var = TRUE)
+summary(avg_mod_q1)
+
+# Sum of weights can be calculated like that
+sw(subset(dq, delta <= 2))
+```
+
+```{r forest plot model average - hillq1}
+# 1. PREP COEFFICIENTS
+coef_df_q1 <- as.data.frame(summary(avg_mod_q1)$coefmat.full)
+coef_df_q1$term <- rownames(coef_df_q1)
+coef_df_q1 <- coef_df_q1[coef_df_q1$term != "cond((Int))", ]
+
+# Add CI
+ci_q1 <- confint(avg_mod_q1)
+coef_df_q1$lower <- ci_q1[coef_df_q1$term, 1]
+coef_df_q1$upper <- ci_q1[coef_df_q1$term, 2]
+
+# 2. MAP IMPORTANCE
+coef_df_q1$importance <- NA
+coef_df_q1$importance[coef_df_q1$term == "cond(hill_q0)"] <- imp["cond(hill_q0)"]
+coef_df_q1$importance[coef_df_q1$term == "cond(sand)"]  <- imp["cond(sand)"]
+coef_df_q1$importance[coef_df_q1$term == "cond(herb)"] <- imp["cond(herb)"]
+coef_df_q1$importance[coef_df_q1$term == "cond(bareground)"] <- imp["cond(bareground)"]
+coef_df_q1$importance[coef_df_q1$term == "cond(vegheight)"] <- imp["cond(vegheight)"]
+coef_df_q1$importance[coef_df_q1$term == "cond(patchiness_ord.L)"] <- imp["cond(patchiness_ord)"]
+# Drop Q and C contrasts
+coef_df_q1 <- coef_df_q1[!coef_df_q1$term %in% c("cond(patchiness_ord.Q)", "cond(patchiness_ord.C)"), ]
+
+# 3. COLOR CODE
+coef_df_q1$color <- ifelse(coef_df_q1$importance >= 0.8, "#C71586", "gray40")
+
+# 4. CLEAN LABELS
+coef_df_q1$clean_label <- coef_df$term %>%
+  str_replace("cond\\(", "") %>%
+  str_replace("\\)", "") %>%
+  str_replace("_ord.L", "") %>%
+  str_replace("hill_q0", "Floral Richness") %>%
+  str_replace("sand", "Sand") %>%
+  str_replace("herb", "Herb layer cover") %>%
+  str_replace("bareground", "Bareground") %>%
+  str_replace("vegheight", "Vegetation height") %>%
+  str_replace("patchiness", "Plot heterogeneity")
+
+# 5. PLOT
+p_forest_q1 <- ggplot(coef_df_q1, aes(x = Estimate, y = reorder(clean_label, Estimate))) +
+  geom_errorbarh(aes(xmin = lower, xmax = upper),
+                 width = 0, color = coef_df_q1$color, linewidth = 0.8) +
+  geom_point(color = coef_df_q1$color, size = 3, stroke = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_line(color = "grey85"),
+    panel.grid.major.y = element_line(color = "grey90"),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 13),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(face = "bold", size = 15, margin = margin(b = 4)),
+    plot.subtitle = element_text(size = 12, margin = margin(b = 8)),
+    axis.title.y = element_text(margin = margin(r = 10))
+  ) +
+  labs(
+    title = "Model-Averaged Effects on Bee Shannon diversity",
+    subtitle = "Predictors with importance ≥ 0.8 highlighted purple",
+    x = "Model-averaged estimate (95% CI)",
+    y = NULL
+  )
+
+p_forest_q1
+```
+```{r print model avg forest plot Hill q1}
+tiff(
+  file.path("..", "output", "figures", "forest_mavgbee_q1_600dpi.tiff"),
+  width = 3990, height = 3000, res = 600, compression = "lzw"
+)
+
+print(p_forest_q1)  
+dev.off()
+```
+
+
+# Table extraction
+```{r table model averaging}
+extract_avg_table <- function(avg_model, dredge_obj, response_name) {
+  
+  coef_df <- as.data.frame(summary(avg_model)$coefmat.full)
+  coef_df$term <- rownames(coef_df)
+  
+  # Remove intercept
+  coef_df <- coef_df %>%
+    filter(term != "cond((Int))")
+  
+  ci <- confint(avg_model)
+  coef_df$lower <- ci[coef_df$term, 1]
+  coef_df$upper <- ci[coef_df$term, 2]
+  
+  # Get importance from dredge
+  importance_raw <- sw(subset(dredge_obj, delta <= 2))
+  
+  # Convert safely to named numeric vector
+  importance_vals <- as.numeric(importance_raw)
+  names(importance_vals) <- names(importance_raw)
+  
+  # Clean base term (collapse polynomial suffix)
+  coef_df$base_term <- coef_df$term %>%
+    str_replace("\\.L|\\.Q|\\.C", "") %>%
+    str_trim()
+  
+  # Match correctly (THIS FIXES YOUR ISSUE)
+  coef_df$importance <- importance_vals[
+    match(coef_df$base_term, names(importance_vals))
+  ]
+  
+  # Keep only linear term for ordinal predictors
+  coef_df <- coef_df %>%
+    filter(!str_detect(term, "\\.Q|\\.C"))
+  
+  coef_df <- coef_df %>%
+    mutate(
+      Predictor = term %>%
+        str_replace("cond\\(", "") %>%
+        str_replace("\\)", "") %>%
+        str_replace("_ord\\.L", "") %>%
+        str_replace("_ord", "") %>%
+        str_trim()
+    )
+  
+  
+  coef_df <- coef_df %>%
+    transmute(
+      Response = response_name,
+      Predictor,
+      Estimate = round(Estimate, 3),
+      CI = sprintf("%.2f – %.2f", lower, upper),
+      Importance = round(importance, 2),
+      Significant = ifelse(lower * upper > 0, "yes", "no")
+    )
+  
+  return(coef_df)
+}
+
+tab_ab <- extract_avg_table(avg_mod_ab, dd, "Abundance")
+tab_ri <- extract_avg_table(avg_mod_ri, dr, "Richness")
+tab_q1 <- extract_avg_table(avg_mod_q1, dq, "Shannon q1")
+
+# Combine all responses
+table_avg_full <- bind_rows(tab_ab, tab_ri, tab_q1)
+
+table_avg_full
+
+table_avg_main <- table_avg_full %>%
+  filter(Importance >= 0.5)
+
+table_avg_main
+
+```
+
+```{r save model avg tables}
+# Create nicely formatted gt table
+gt_table_avg_full <- table_avg_full %>%
+  gt() %>%
+  cols_label(
+    Response   = "Response variable",
+    Predictor  = "Predictor",
+    Estimate   = "Estimate",
+    CI         = "95% CI",
+    Importance = "Importance (Σw)",
+    Significant = "CI excludes 0"
+  )
+
+# Export to Word
+gtsave(gt_table_avg_full,
+       "../output/tables/model_avg_full.docx")
+
+# Create nicely formatted gt table
+gt_table_avg_main <- table_avg_main %>%
+  gt() %>%
+  cols_label(
+    Response   = "Response variable",
+    Predictor  = "Predictor",
+    Estimate   = "Estimate",
+    CI         = "95% CI",
+    Importance = "Importance (Σw)",
+    Significant = "CI excludes 0"
+  )
+
+# Export to Word
+gtsave(gt_table_avg,
+       "../output/tables/model_avg_main.docx")
+```
+
+
+
+# Richness model without patchiness
+```{r Bee richness global model complex}
+RI2_glmm <- glmmTMB(
+  bee_richness ~
+    hill_q0 + sand + bareground + herb + vegheight +
+    (1 | plotID),
+  family = nbinom2,
+  data = data_all_scaled,
+  na.action = na.fail
+)
+
+print(summary(RI2_glmm))
+
+vif(lm(bee_richness ~ hill_q0 + sand + bareground +
+       herb + vegheight,
+       data = data_all_scaled))
+#all values below 3 - no multicollinearity 
+
+```
+
+Build global model with simple random effects structure
+```{r Bee richness global model}
+RI2_glmm <- glmmTMB(
+  bee_richness ~
+    hill_q0 + sand + bareground + herb + vegheight +
+    (1 | plotID),
+  family = nbinom1,
+  data = data_all_scaled,
+  na.action = na.fail
+)
+
+print(summary(RI2_glmm))
+
+vif(lm(bee_richness ~ hill_q0 + sand + bareground +
+       herb + vegheight,
+       data = data_all_scaled))
+#all values below 3 - no multicollinearity
+```
+
+```{r Bee richness dredge}
+dr2 <- dredge(RI2_glmm, rank = "AICc", trace = 2)
+dr2
+
+head(dr2)
+```
+
+```{r model averaging richness}
+cand_ri2 <- get.models(dr2, subset = delta <= 2)
+
+# best model (to be used later for ggpred)
+bestmod_ri2 <- cand_ri2[[1]]
+
+avg_mod_ri2 <- model.avg(cand_ri2, revised.var = TRUE)
+summary(avg_mod_ri2)
+
+# Sum of weights can be calculated like that
+sw(subset(dr2, delta <= 2))
+```
+
+```{r forest plot model average - richness}
+r# 1. PREP COEFFICIENTS (model.avg output)
+coef_df_ri2 <- as.data.frame(summary(avg_mod_ri2)$coefmat.full)
+coef_df_ri2$term <- rownames(coef_df_ri2)
+
+# Remove intercept
+coef_df_ri2 <- coef_df_ri2[coef_df_ri2$term != "cond((Int))", ]
+
+# Add CI
+ci_ri2 <- confint(avg_mod_ri2)
+coef_df_ri2$lower <- ci_ri2[coef_df_ri2$term, 1]
+coef_df_ri2$upper <- ci_ri2[coef_df_ri2$term, 2]
+
+# 2. MAP IMPORTANCE (from sw(top_set))
+imp_ri2 <- sw(subset(dr2, delta <= 2))
+coef_df_ri2$importance <- NA
+coef_df_ri2$importance[coef_df_ri2$term == "cond(hill_q0)"]    <- imp_ri2["cond(hill_q0)"]
+coef_df_ri2$importance[coef_df_ri2$term == "cond(sand)"]        <- imp_ri2["cond(sand)"]
+coef_df_ri2$importance[coef_df_ri2$term == "cond(herb)"]        <- imp_ri2["cond(herb)"]
+coef_df_ri2$importance[coef_df_ri2$term == "cond(bareground)"]  <- imp_ri2["cond(bareground)"]
+coef_df_ri2$importance[coef_df_ri2$term == "cond(vegheight)"]   <- imp_ri2["cond(vegheight)"]
+
+# 3. COLOR CODE BY IMPORTANCE THRESHOLD
+importance_threshold <- 0.8
+coef_df_ri2$color <- ifelse(
+  coef_df_ri2$importance >= importance_threshold,
+  "#C71586",
+  "gray40"
+)
+
+# 4. CLEAN LABELS
+coef_df_ri2$clean_label <- coef_df_ri2$term %>%
+  str_replace("cond\\(", "") %>%
+  str_replace("\\)", "") %>%
+  str_replace("hill_q0",    "Floral Richness") %>%
+  str_replace("sand",       "Sand") %>%
+  str_replace("herb",       "Herb layer cover") %>%
+  str_replace("bareground", "Bareground") %>%
+  str_replace("vegheight",  "Vegetation height")
+
+# 5. PLOT
+p_forest_ri2 <- ggplot(coef_df_ri2, aes(x = Estimate, y = reorder(clean_label, Estimate))) +
+  
+  geom_errorbarh(aes(xmin = lower, xmax = upper),
+                 width = 0,
+                 color = coef_df_ri2$color,
+                 linewidth = 0.8) +
+  
+  geom_point(color = coef_df_ri2$color,
+             size = 3, stroke = 1) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_line(color = "grey85"),
+    panel.grid.major.y = element_line(color = "grey90"),
+    panel.grid.minor  = element_blank(),
+    axis.text  = element_text(size = 13),
+    axis.title = element_text(size = 14),
+    plot.title    = element_text(face = "bold", size = 15, margin = margin(b = 4)),
+    plot.subtitle = element_text(size = 12, margin = margin(b = 8)),
+    axis.title.y  = element_text(margin = margin(r = 10))
+  ) +
+  
+  labs(
+    title    = "Model-Averaged Effects on Bee Richness",
+    subtitle = "Predictors with importance ≥ 0.8 highlighted purple",
+    x = "Model-averaged estimate (95% CI)",
+    y = NULL
+  )
+
+p_forest_ri2
+```
+
+```{r print model avg forest plot richness}
+tiff(
+  file.path("..", "output", "figures", "forest_mavgbee_ri2_600dpi.tiff"),
+  width = 3990, height = 3000, res = 600, compression = "lzw"
+)
+
+print(p_forest_ri2)  
+dev.off()
+```
+
+```{r extract and print table of r2 model}
+# Add ri2 to the extraction
+tab_ri2 <- extract_avg_table(avg_mod_ri2, dr2, "Richness (no patchiness)")
+
+# Combine all responses including the new model
+table_avg_full <- bind_rows(tab_ri2)
+
+# Filter main table
+table_avg_main <- table_avg_full %>%
+  filter(Importance >= 0.5)
+
+# Full table
+gt_table_avg_r2 <- tab_ri2 %>%
+  gt() %>%
+  cols_label(
+    Response   = "Response variable",
+    Predictor  = "Predictor",
+    Estimate   = "Estimate",
+    CI         = "95% CI",
+    Importance = "Importance (Σw)",
+    Significant = "CI excludes 0"
+  )
+
+# Export to Word
+gtsave(gt_table_avg_r2,
+       "../output/tables/model_avg_r2.docx")
+```
+
+# Pool visits 
+```{r load and prepare data}
+data_plot_scaled <- readRDS(
+  file.path("..", "data", "cleaned", "data_plot_scaled.rds")
+)
+
+rarefied_size <- readRDS(
+  file.path("..","data","cleaned","rarefied_size_plot.rds")
+)
+
+# merge size based and coverage based vaues
+data_plot_scaled <- data_plot_scaled %>%
+  left_join(
+    rarefied_size %>%
+      select(region, site, plotID, richness),
+    by = c("region", "site", "plotID")
+  ) %>%
+  rename(richness_rarefied_size = richness)
+
+# remove NAs
+data_model <- data_plot_scaled %>%
+  filter(!is.na(richness_rarefied_size))
+```
+
+Collinearity test enviornmental variables
+```{r}
+# Convert ordinal patchiness to numeric
+data_plot_scaled <- data_plot_scaled %>%
+  mutate(patchiness_num = as.numeric(patchiness_ord))
+
+# List of variables INCLUDING patchiness
+env_vars <- c("bareground", "vegcover", "vegheight", "herb", "woody",
+              "sand", "gravel", "cobble", "stone", "wood", "soil", "flat",
+              "sloped", "steep", "canopy", "canopy_hp", "branchpile",
+              "stonepile", "standingdeadwood", "lyingdeadwood",
+              "hill_q0", "hill_q1", "hill_q2",
+              "patchiness_num")
+
+
+# Compute Spearman correlation matrix
+cor_matrix <- cor(
+  data_plot_scaled[env_vars],
+  method = "spearman",
+  use = "pairwise.complete.obs"
+)
+
+# Identify pairs with |correlation| > 0.7
+high_corr <- which(abs(cor_matrix) > 0.7 & abs(cor_matrix) < 1, arr.ind = TRUE)
+
+# Create data frame
+correlated_pairs <- data.frame(
+  var1 = rownames(cor_matrix)[high_corr[, 1]],
+  var2 = colnames(cor_matrix)[high_corr[, 2]],
+  correlation = cor_matrix[high_corr]
+)
+
+# Remove duplicates
+correlated_pairs <- correlated_pairs[correlated_pairs$var1 < correlated_pairs$var2, ]
+
+print(correlated_pairs)
+
+# Plot correlation matrix
+corrplot(
+  cor_matrix,
+  method = "color",
+  type = "upper",
+  tl.col = "black",
+  tl.srt = 45,
+  col = colorRampPalette(c("#2166AC", "white", "#B2182B"))(200),
+  addCoef.col = "black",
+  number.cex = 0.6
+)
+```
+herb and vegheight highly correlated (0.79) - keep only herb
+
+patchiness is correlated with hill_q0 (0.72), sand (0.71) - keep only patchiness?
+VIF collinearity are not high - can we keep this?
+
+Have to simpllify model from multivariate that it was prior to pooling visits
+
+
+```{r chekc rarefied richness distribution}
+hist(data_model$richness_rarefied_size)
+
+```
+# Pooled rarefied richness model (merged across plots)
+```{r size based rarefaction model}
+RI_glmm_rarefied <- glmmTMB(
+  richness_rarefied_size ~
+    herb + bareground + patchiness_ord +
+    (1 | region),
+  data = data_model,
+  family = poisson(),
+  na.action = na.fail
+)
+
+summary(RI_glmm_rarefied)
+check_model(RI_glmm_rarefied)
+
+RI2_glmm_rarefied <- glmmTMB(
+  richness_rarefied_size ~
+    hill_q0 + sand + herb + bareground + vegheight + patchiness_ord +
+    (1 | region),
+  data = data_model,
+  family = nbinom1(),
+  na.action = na.fail
+)
+
+summary(RI2_glmm_rarefied)
+check_model(RI2_glmm_rarefied)
+
+RI3_glmm_rarefied <- glmmTMB(
+  richness_rarefied_size ~ herb + bareground +patchiness_ord +
+    (1 | region),
+  data = data_model,
+  family = gaussian(link = "log"),
+  na.action = na.fail
+)
+summary(RI3_glmm_rarefied)
+check_model(RI3_glmm_rarefied)
+
+
+RI4_glmm_rarefied <- glmmTMB(
+  richness_rarefied_size ~ herb + bareground +patchiness_ord +
+    (1 | region),
+  data = data_model,
+  family = gaussian(),
+  na.action = na.fail
+)
+
+summary(RI4_glmm_rarefied)
+check_model(RI4_glmm_rarefied)
+```
+
+```{r Rarefied bee abundance global model}
+RAB_glmm <- glmmTMB(
+  richness_rarefied_size ~ herb + bareground +patchiness_ord +
+    (1 | region),
+  data = data_model,
+  family = gaussian(),
+  na.action = na.fail
+)
+
+print(summary(RAB_glmm))
+check_model(RAB_glmm)
+```
+
+```{r  bee abundance dredge}
+dra <- dredge(RAB_glmm, rank = "AICc", trace = 2)
+dra
+
+head(dra)
+```
+
+```{r model averaging abundance}
+cand_rab <- get.models(dra, subset = delta <= 2)
+
+# best model (to be used later for ggpred)
+bestmod_rab <- cand_rab[[1]]
+
+avg_mod_rab <- model.avg(cand_rab, revised.var = TRUE)
+summary(avg_mod_rab)
+confint(avg_mod_rab)
+
+# Sum of weights can be calculated like that
+sw(subset(dra, delta <= 2))
+```
+
+```{r forest plot model average - abundance}
+# 1. PREP COEFFICIENTS (model.avg output)
+coef_df <- as.data.frame(summary(avg_mod_rab)$coefmat.full)
+coef_df$term <- rownames(coef_df)
+# Remove intercept
+coef_df <- coef_df[coef_df$term != "cond((Int))", ]
+# Add CI
+ci <- confint(avg_mod_rab)
+coef_df$lower <- ci[coef_df$term, 1]
+coef_df$upper <- ci[coef_df$term, 2]
+# 2. MAP IMPORTANCE (from sw(top_set))
+imp <- sw(subset(dra, delta <= 2))
+coef_df$importance <- NA
+coef_df$importance[coef_df$term == "cond(herb)"] <- imp["cond(herb)"]
+coef_df$importance[coef_df$term == "cond(patchiness_ord.L)"] <- imp["cond(patchiness_ord)"]
+coef_df$importance[coef_df$term == "cond(patchiness_ord.Q)"] <- imp["cond(patchiness_ord)"]
+# Drop Q and C contrasts and bareground
+coef_df <- coef_df[!coef_df$term %in% c("cond(patchiness_ord.C)",
+                                          "cond(bareground)"), ]
+# 3. COLOR CODE BY IMPORTANCE THRESHOLD
+importance_threshold <- 0.8
+coef_df$color <- ifelse(
+  coef_df$importance >= importance_threshold,
+  "#C71586",
+  "gray40"
+)
+# 4. CLEAN LABELS
+coef_df$clean_label <- coef_df$term %>%
+  str_replace("cond\\(", "") %>% 
+  str_replace("\\)", "") %>%      
+  str_replace("patchiness_ord.L", "Patchiness (linear)") %>%
+  str_replace("patchiness_ord.Q", "Patchiness (quadratic)") %>%
+  str_replace("herb", "Herbaceous vegetation")
+
+# 5. plot
+p_forest_rab <- ggplot(coef_df, aes(x = Estimate, y = reorder(clean_label, Estimate))) +
+  
+  geom_errorbarh(aes(xmin = lower, xmax = upper),
+                 width = 0,
+                 color = coef_df$color,
+                 linewidth = 0.8) +
+  
+  geom_point(color = coef_df$color,
+             size = 3, stroke = 1) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_line(color = "grey85"),
+    panel.grid.major.y = element_line(color = "grey90"),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 13),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(face = "bold", size = 15, margin = margin(b = 4)),
+    plot.subtitle = element_text(size = 12, margin = margin(b = 8)),
+    axis.title.y = element_text(margin = margin(r = 10))
+  ) +
+  
+  labs(
+    title = "Model-Averaged Effects on Rarefied Bee Richness",
+    subtitle = "Predictors with importance ≥ 0.8 highlighted purple",
+    x = "Model-averaged estimate (95% CI)",
+    y = NULL
+  )
+p_forest_rab
+
+plot(ggpredict(bestmod_rab, terms = "patchiness_ord"))
+ggpredict(bestmod_rab, terms = "patchiness_ord [all]")
+```
+Best model rarefied bee abundance
+```{r best model POOLED bee abundance}
+bestmod_rri
+bestmod_rri <- glmmTMB(bee_abundance ~bareground + herb + patchiness_ord + (1 | region),
+                      family = nbinom1,
+                      data = data_plot_scaled)
+
+summary(bestmod_pab)
+```
+
+# Pooled rarefied data - flower instead of patchiness
+```{r Rarefied bee abundance global model}
+RAB2_glmm <- glmmTMB(
+  richness_rarefied_size ~ herb + bareground + hill_q0 +
+    (1 | region),
+  data = data_model,
+  family = gaussian(),
+  na.action = na.fail
+)
+
+print(summary(RAB2_glmm))
+check_model(RAB2_glmm)
+```
+
+```{r  bee abundance dredge}
+dra2 <- dredge(RAB2_glmm, rank = "AICc", trace = 2)
+dra2
+
+head(dra2)
+```
+
+```{r model averaging abundance}
+cand_rab2 <- get.models(dra2, subset = delta <= 2)
+
+# best model (to be used later for ggpred)
+bestmod_rab2 <- cand_rab[[1]]
+
+avg_mod_rab2 <- model.avg(cand_rab2, revised.var = TRUE)
+summary(avg_mod_rab2)
+confint(avg_mod_rab2)
+
+# Sum of weights can be calculated like that
+sw(subset(dra2, delta <= 2))
+```
+
+```{r forest plot model average - abundance}
+# 1. PREP COEFFICIENTS (model.avg output)
+coef_df <- as.data.frame(summary(avg_mod_rab2)$coefmat.full)
+coef_df$term <- rownames(coef_df)
+# Remove intercept
+coef_df <- coef_df[coef_df$term != "cond((Int))", ]
+# Add CI
+ci <- confint(avg_mod_rab2)
+coef_df$lower <- ci[coef_df$term, 1]
+coef_df$upper <- ci[coef_df$term, 2]
+# 2. MAP IMPORTANCE (from sw(top_set))
+imp <- sw(subset(dra2, delta <= 2))
+coef_df$importance <- NA
+coef_df$importance[coef_df$term == "cond(herb)"] <- imp["cond(herb)"]
+coef_df$importance[coef_df$term == "cond(hill_q0)"] <- imp["cond(hill_q0"]
+
+# # Drop Q and C contrasts and bareground
+# coef_df <- coef_df[!coef_df$term %in% c("cond(patchiness_ord.C)",
+                                          # "cond(bareground)"), ]
+# 3. COLOR CODE BY IMPORTANCE THRESHOLD
+importance_threshold <- 0.8
+coef_df$color <- ifelse(
+  coef_df$importance >= importance_threshold,
+  "#C71586",
+  "gray40"
+)
+# 4. CLEAN LABELS
+coef_df$clean_label <- coef_df$term %>%
+  str_replace("cond\\(", "") %>% 
+  str_replace("\\)", "") %>%      
+  str_replace("patchiness_ord.L", "Patchiness (linear)") %>%
+  str_replace("patchiness_ord.Q", "Patchiness (quadratic)") %>%
+  str_replace("herb", "Herbaceous vegetation")
+
+# 5. plot
+p_forest_rab <- ggplot(coef_df, aes(x = Estimate, y = reorder(clean_label, Estimate))) +
+  
+  geom_errorbarh(aes(xmin = lower, xmax = upper),
+                 width = 0,
+                 color = coef_df$color,
+                 linewidth = 0.8) +
+  
+  geom_point(color = coef_df$color,
+             size = 3, stroke = 1) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_line(color = "grey85"),
+    panel.grid.major.y = element_line(color = "grey90"),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 13),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(face = "bold", size = 15, margin = margin(b = 4)),
+    plot.subtitle = element_text(size = 12, margin = margin(b = 8)),
+    axis.title.y = element_text(margin = margin(r = 10))
+  ) +
+  
+  labs(
+    title = "Model-Averaged Effects on Rarefied Bee Richness",
+    subtitle = "Predictors with importance ≥ 0.8 highlighted purple",
+    x = "Model-averaged estimate (95% CI)",
+    y = NULL
+  )
+p_forest_rab
+
+plot(ggpredict(bestmod_rab, terms = "patchiness_ord"))
+ggpredict(bestmod_rab, terms = "patchiness_ord [all]")
+```
+
+
+
+
+
+# Pooled raw data
+```{r load and prepare data}
+data_plot_scaled <- readRDS(
+  file.path("..", "data", "cleaned", "data_plot_scaled.rds")
+)
+```
+
+Collinearity test environmental variables
+```{r}
+# Convert ordinal patchiness to numeric
+data_plot_scaled <- data_plot_scaled %>%
+  mutate(patchiness_num = as.numeric(patchiness_ord))
+
+
+# List of variables INCLUDING patchiness
+env_vars <- c("bareground", "vegcover", "vegheight", "herb", "woody",
+              "sand", "gravel", "cobble", "stone", "wood", "soil", "flat",
+              "sloped", "steep", "canopy", "canopy_hp", "branchpile",
+              "stonepile", "standingdeadwood", "lyingdeadwood",
+              "hill_q0", "hill_q1", "hill_q2",
+              "patchiness_num")
+
+
+# Compute Spearman correlation matrix
+cor_matrix <- cor(
+  data_plot_scaled[env_vars],
+  method = "spearman",
+  use = "pairwise.complete.obs"
+)
+
+# Identify pairs with |correlation| > 0.7
+high_corr <- which(abs(cor_matrix) > 0.7 & abs(cor_matrix) < 1, arr.ind = TRUE)
+
+# Create data frame
+correlated_pairs <- data.frame(
+  var1 = rownames(cor_matrix)[high_corr[, 1]],
+  var2 = colnames(cor_matrix)[high_corr[, 2]],
+  correlation = cor_matrix[high_corr]
+)
+
+# Remove duplicates
+correlated_pairs <- correlated_pairs[correlated_pairs$var1 < correlated_pairs$var2, ]
+
+print(correlated_pairs)
+
+# Plot correlation matrix
+corrplot(
+  cor_matrix,
+  method = "color",
+  type = "upper",
+  tl.col = "black",
+  tl.srt = 45,
+  col = colorRampPalette(c("#2166AC", "white", "#B2182B"))(200),
+  addCoef.col = "black",
+  number.cex = 0.6
+)
+```
+herb and vegheight highly correlated (0.79) - keep only herb
+
+patchiness is correlated with hill_q0 (0.72), sand (0.71) - keep only patchiness?
+VIF collinearity are not high - can we keep this?
+
+Have to simpllify model from multivariate that it was prior to pooling visits
+
+
+# Pooled abundance
+```{r check model distribution}
+nb2_plot <- glmmTMB(
+  bee_abundance ~
+    herb + bareground + patchiness_ord +
+    (1 |region),
+  family = nbinom2,
+  data = data_plot_scaled,
+  na.action = na.fail
+)
+print(summary(nb2_plot))
+
+check_model(nb2_plot)
+
+nb1_plot <- glmmTMB(
+  bee_abundance ~
+    herb + bareground + patchiness_ord +
+    (1 |region),
+  family = nbinom1,
+  data = data_plot_scaled,
+  na.action = na.fail
+)
+print(summary(nb1_plot))
+
+check_model(nb1_plot)
+
+# Stick with nbinom1, better AIC
+```
+
+
+```{r Pooled bee abundance global model}
+PAB_glmm <- glmmTMB(
+  bee_abundance ~
+   herb + bareground + patchiness_ord +
+    (1 | region),
+  family = nbinom1,
+  data = data_plot_scaled,
+  na.action = na.fail
+)
+print(summary(PAB_glmm))
+
+check_model(PAB_glmm)
+```
+```{r Pooled bee abundance dredge}
+dpa <- dredge(PAB_glmm, rank = "AICc", trace = 2)
+dpa
+
+head(dpa)
+```
+
+```{r model averaging abundance}
+cand_pab <- get.models(dpa, subset = delta <= 2)
+
+# best model (to be used later for ggpred)
+bestmod_pab <- cand_pab[[1]]
+
+avg_mod_pab <- model.avg(cand_pab, revised.var = TRUE)
+summary(avg_mod_pab)
+confint(avg_mod_pab)
+
+# Sum of weights can be calculated like that
+sw(subset(dpa, delta <= 2))
+```
+
+```{r forest plot model average - abundance}
+# 1. PREP COEFFICIENTS (model.avg output)
+coef_df <- as.data.frame(summary(avg_mod_pab)$coefmat.full)
+coef_df$term <- rownames(coef_df)
+
+# Remove intercept
+coef_df <- coef_df[coef_df$term != "cond((Int))", ]
+
+# Add CI
+ci <- confint(avg_mod_pab)
+coef_df$lower <- ci[coef_df$term, 1]
+coef_df$upper <- ci[coef_df$term, 2]
+
+# 2. MAP IMPORTANCE (from sw(top_set))
+
+imp <- sw(subset(dpa, delta <= 2))
+
+coef_df$importance <- NA
+coef_df$importance[coef_df$term == "cond(bareground)"] <- imp["cond(bareground)"]
+coef_df$importance[coef_df$term == "cond(herb)"] <- imp["cond(herb)"]
+coef_df$importance[coef_df$term == "cond(patchiness_ord.L)"] <- imp["cond(patchiness_ord)"]
+# Drop Q and C contrasts
+coef_df <- coef_df[!coef_df$term %in% c("cond(patchiness_ord.Q)", "cond(patchiness_ord.C)"), ]
+
+# 3. COLOR CODE BY IMPORTANCE THRESHOLD
+
+importance_threshold <- 0.8
+
+coef_df$color <- ifelse(
+  coef_df$importance >= importance_threshold,
+  "#C71586",
+  "gray40"
+)
+
+# 4. CLEAN LABELS
+
+coef_df$clean_label <- coef_df$term %>%
+  str_replace("cond\\(", "") %>% 
+  str_replace("\\)", "") %>%      
+  str_replace("_ord.L", "") %>% 
+  str_replace("bareground", "Bareground") %>%
+  str_replace("herb", "Herbaceous vegetation") %>%
+  str_replace("patchiness", "Plot heterogeneity")
+
+
+# 5. plot
+
+p_forest_pab <- ggplot(coef_df, aes(x = Estimate, y = reorder(clean_label, Estimate))) +
+  
+  geom_errorbarh(aes(xmin = lower, xmax = upper),
+                 width = 0,
+                 color = coef_df$color,
+                 linewidth = 0.8) +
+  
+  geom_point(color = coef_df$color,
+             size = 3, stroke = 1) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_line(color = "grey85"),   # vertical gridlines ON
+    panel.grid.major.y = element_line(color = "grey90"),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 13),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(face = "bold", size = 15, margin = margin(b = 4)),
+    plot.subtitle = element_text(size = 12, margin = margin(b = 8)),
+    
+    axis.title.y = element_text(margin = margin(r = 10))
+  ) +
+  
+  labs(
+    title = "Model-Averaged Effects on Raw Pooled Bee Abundance",
+    subtitle = "Predictors with importance ≥ 0.8 highlighted purple",
+    x = "Model-averaged estimate (95% CI)",
+    y = NULL
+  )
+
+p_forest_pab
+```
+
+Best model POOLED bee abundance
+```{r best model POOLED bee abundance}
+bestmod_pab
+bestmod_pab <- glmmTMB(bee_abundance ~bareground + herb + patchiness_ord + (1 | region),
+                      family = nbinom1,
+                      data = data_plot_scaled)
+
+summary(bestmod_pab)
+```
+
+Plot predictions. Backtransform x-axis plant abundance for interpretability
+```{r bes model bee abundance plot predictions}
+# Generate predictions for each predictor
+pred_herb      <- ggpredict(bestmod_pab, terms = "herb")
+pred_bareground <- ggpredict(bestmod_pab, terms = "bareground")
+pred_patch      <- ggpredict(bestmod_pab, terms = "patchiness_ord")
+
+# Back-transform hill_q0 and sand to raw units
+herb_mean <- attr(data_plot_scaled$herb, "scaled:center")
+herb_sd   <- attr(data_plot_scaled$herb, "scaled:scale")
+
+bareground_mean <- attr(data_plot_scaled$bareground, "scaled:center")
+bareground_sd   <- attr(data_plot_scaled$bareground, "scaled:scale")
+
+
+# plot predictions
+p_herb <- ggplot() +
+  geom_jitter(
+    data = data_plot_scaled,
+    aes(x = herb, y = bee_abundance),
+    width = 0.15, height = 0.05,
+    alpha = 0.25, size = 1.5, color = "grey50"
+  ) +
+  geom_ribbon(
+    data = pred_herb,
+    aes(x = x, ymin = conf.low, ymax = conf.high),
+    fill = "plum2", alpha = 0.35
+  ) +
+  geom_line(
+    data = pred_herb,
+    aes(x = x, y = predicted),
+    color = "#7A0177", linewidth = 1.3
+  ) +
+  labs(
+    title = "Effect of herb Vegetation",
+    x = "herb vegetation (scaled)",
+    y = "Bee abundance"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(panel.grid.minor = element_blank())
+
+p_bare <- ggplot() +
+  geom_jitter(
+    data = data_plot_scaled,
+    aes(x = bareground, y = bee_abundance),
+    width = 0.15, height = 0.05,
+    alpha = 0.25, size = 1.5, color = "grey50"
+  ) +
+  geom_ribbon(
+    data = pred_bareground,
+    aes(x = x, ymin = conf.low, ymax = conf.high),
+    fill = "plum2", alpha = 0.35
+  ) +
+  geom_line(
+    data = pred_bareground,
+    aes(x = x, y = predicted),
+    color = "#7A0177", linewidth = 1.3
+  ) +
+  labs(
+    title = "Effect of Bare Ground",
+    x = "Bare ground (scaled)",
+    y = "Bee abundance"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(panel.grid.minor = element_blank())
+
+p_patch <- ggplot() +
+  geom_jitter(
+    data = data_plot_scaled,
+    aes(x = patchiness_ord, y = bee_abundance),
+    width = 0.1, height = 0.05,
+    alpha = 0.25, size = 1.5, color = "grey50"
+  ) +
+  geom_point(
+    data = pred_patch,
+    aes(x = x, y = predicted),
+    color = "#7A0177", size = 3
+  ) +
+  geom_errorbar(
+    data = pred_patch,
+    aes(x = x, ymin = conf.low, ymax = conf.high),
+    color = "#7A0177", width = 0.1, linewidth = 1
+  ) +
+  labs(
+    title = "Effect of Habitat Heterogeneity",
+    x = "Plot heterogeneity (ordinal)",
+    y = "Bee abundance"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(panel.grid.minor = element_blank())
+
+p_combined_abundance <- p_herb + p_bare + p_patch + plot_layout(ncol = 3)
+
+p_combined_abundance
+```
+
+
+
+# Pooled richness
+```{r check model distribution}
+nb2_plot <- glmmTMB(
+  bee_richness ~
+    herb + bareground + patchiness_ord +
+    (1 |region),
+  family = nbinom2,
+  data = data_plot_scaled,
+  na.action = na.fail
+)
+print(summary(nb2_plot))
+check_model(nb2_plot)
+nb1_plot <- glmmTMB(
+  bee_richness ~
+    herb + bareground + patchiness_ord +
+    (1 |region),
+  family = nbinom1,
+  data = data_plot_scaled,
+  na.action = na.fail
+)
+print(summary(nb1_plot))
+check_model(nb1_plot)
+# Stick with nbinom1, better AIC
+```
+
+```{r Pooled bee richness global model}
+PRI_glmm <- glmmTMB(
+  bee_richness ~
+   herb + bareground + patchiness_ord +
+    (1 | region),
+  family = nbinom1,
+  data = data_plot_scaled,
+  na.action = na.fail
+)
+print(summary(PRI_glmm))
+check_model(PRI_glmm)
+```
+
+```{r Pooled bee richness dredge}
+dpr <- dredge(PRI_glmm, rank = "AICc", trace = 2)
+dpr
+head(dpr)
+```
+
+```{r model averaging richness}
+cand_pri <- get.models(dpr, subset = delta <= 2)
+# best model (to be used later for ggpred)
+bestmod_pri <- cand_pri[[1]]
+avg_mod_pri <- model.avg(cand_pri, revised.var = TRUE)
+summary(avg_mod_pri)
+confint(avg_mod_pri)
+# Sum of weights can be calculated like that
+sw(subset(dpr, delta <= 2))
+```
+
+```{r forest plot model average - richness}
+# 1. PREP COEFFICIENTS (model.avg output)
+coef_df <- as.data.frame(summary(avg_mod_pri)$coefmat.full)
+coef_df$term <- rownames(coef_df)
+# Remove intercept
+coef_df <- coef_df[coef_df$term != "cond((Int))", ]
+# Add CI
+ci <- confint(avg_mod_pri)
+coef_df$lower <- ci[coef_df$term, 1]
+coef_df$upper <- ci[coef_df$term, 2]
+# 2. MAP IMPORTANCE (from sw(top_set))
+imp <- sw(subset(dpr, delta <= 2))
+coef_df$importance <- NA
+coef_df$importance[coef_df$term == "cond(bareground)"] <- imp["cond(bareground)"]
+coef_df$importance[coef_df$term == "cond(herb)"] <- imp["cond(herb)"]
+coef_df$importance[coef_df$term == "cond(patchiness_ord.L)"] <- imp["cond(patchiness_ord)"]
+coef_df$importance[coef_df$term == "cond(patchiness_ord.Q)"] <- imp["cond(patchiness_ord)"]
+# Drop only C contrast
+coef_df <- coef_df[!coef_df$term %in% c("cond(patchiness_ord.C)"), ]
+# 3. COLOR CODE BY IMPORTANCE THRESHOLD
+importance_threshold <- 0.8
+coef_df$color <- ifelse(
+  !is.na(coef_df$importance) & coef_df$importance >= importance_threshold,
+  "#C71586",
+  "gray40"
+)
+# 4. CLEAN LABELS
+coef_df$clean_label <- coef_df$term %>%
+  str_replace("cond\\(", "") %>% 
+  str_replace("\\)", "") %>%
+  str_replace("_ord\\.L", " (linear)") %>%
+  str_replace("_ord\\.Q", " (quadratic)") %>%
+  str_replace("bareground", "Bareground") %>%
+  str_replace("herb", "Herbaceous vegetation") %>%
+  str_replace("patchiness", "Plot heterogeneity")
+# 5. plot
+p_forest_pri <- ggplot(coef_df, aes(x = Estimate, y = reorder(clean_label, Estimate))) +
+  
+  geom_errorbarh(aes(xmin = lower, xmax = upper),
+                 width = 0,
+                 color = coef_df$color,
+                 linewidth = 0.8) +
+  
+  geom_point(color = coef_df$color,
+             size = 3, stroke = 1) +
+  
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+  
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_line(color = "grey85"),
+    panel.grid.major.y = element_line(color = "grey90"),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 13),
+    axis.title = element_text(size = 14),
+    plot.title = element_text(face = "bold", size = 15, margin = margin(b = 4)),
+    plot.subtitle = element_text(size = 12, margin = margin(b = 8)),
+    axis.title.y = element_text(margin = margin(r = 10))
+  ) +
+  
+  labs(
+    title = "Model-Averaged Effects on Raw Pooled Bee Richness",
+    subtitle = "Predictors with importance ≥ 0.8 highlighted purple",
+    x = "Model-averaged estimate (95% CI)",
+    y = NULL
+  )
+p_forest_pri
+```
+
+The changes from the previous version:
+- Bareground kept in — only `patchiness_ord.C` is dropped
+- Added `!is.na(coef_df$importance) &` to the color logic to safely handle any terms with NA importance without throwing an error
+```
+

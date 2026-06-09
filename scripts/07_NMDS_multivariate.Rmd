@@ -159,4 +159,765 @@ ggplot() +
 
 ```
 
+```{r PCA}
+library(tidyverse)
+library(vegan)
+library(ggplot2)
+library(ggrepel)
+
+# ─────────────────────────────────────────────
+# 1. EXTRACT BEE SPECIES MATRIX
+# ─────────────────────────────────────────────
+
+# Identify species columns
+bee_sp_start <- which(names(data_all) == "Andrena.aeneiventris")
+bee_sp_end   <- which(names(data_all) == "Stelis.punctulatissima")
+bee_sp_cols  <- bee_sp_start:bee_sp_end
+
+# Metadata
+meta <- data_all %>%
+  select(surveyID, site, region, plot, plotID, visit, patchiness,
+         bee_richness, bee_abundance, bee_hill_q1, bee_hill_q2)
+
+# Species matrix — replace NA with 0
+sp_matrix <- data_all[, bee_sp_cols]
+sp_matrix[is.na(sp_matrix)] <- 0
+
+# ─────────────────────────────────────────────
+# 2. REMOVE EMPTY ROWS (plots with 0 bees)
+#    NMDS cannot handle all-zero rows
+# ─────────────────────────────────────────────
+
+row_sums   <- rowSums(sp_matrix)
+keep       <- row_sums > 0
+
+sp_matrix  <- sp_matrix[keep, ]
+meta       <- meta[keep, ]
+
+cat("Rows retained (non-zero bee surveys):", nrow(sp_matrix), "\n")
+cat("Species retained:", ncol(sp_matrix), "\n")
+
+# Optionally drop species never observed (all-zero columns)
+sp_matrix <- sp_matrix[, colSums(sp_matrix) > 0]
+cat("Species after removing unobserved:", ncol(sp_matrix), "\n")
+
+# ─────────────────────────────────────────────
+# 3. NMDS — Bray-Curtis dissimilarity
+# ─────────────────────────────────────────────
+
+set.seed(42)
+nmds <- metaMDS(
+  sp_matrix,
+  distance = "bray",
+  k        = 2,       # 2 axes
+  trymax   = 100,
+  autotransform = TRUE  # applies sqrt + wisconsin transformation
+)
+
+cat("\nNMDS stress:", nmds$stress, "\n")
+# Stress interpretation:
+# < 0.05 excellent, < 0.10 good, < 0.20 acceptable, > 0.20 use caution
+
+# ─────────────────────────────────────────────
+# 4. BUILD PLOT DATAFRAME
+# ─────────────────────────────────────────────
+
+nmds_scores <- as.data.frame(scores(nmds, display = "sites"))
+nmds_scores <- bind_cols(nmds_scores, meta)
+
+# ─────────────────────────────────────────────
+# 5. PLOT — coloured by site type, shaped by region
+# ─────────────────────────────────────────────
+
+p_nmds <- ggplot(nmds_scores,
+                 aes(x = NMDS1, y = NMDS2,
+                     colour = site,
+                     shape  = region)) +
+  geom_point(alpha = 0.7, size = 2.5) +
+  scale_colour_manual(
+    values = c("focal"   = "#2166ac",
+               "control" = "#d73027"),
+    name   = "Site type"
+  ) +
+  scale_shape_manual(
+    values = c(16, 17, 15, 18),  # adjust if >4 regions
+    name   = "Region"
+  ) +
+  annotate("text",
+           x    = Inf, y = -Inf,
+           hjust = 1.1, vjust = -0.5,
+           label = paste0("Stress = ", round(nmds$stress, 3)),
+           size  = 3.5, colour = "grey40") +
+  labs(
+    x     = "NMDS1",
+    y     = "NMDS2",
+    title = "Bee community composition — NMDS (Bray-Curtis)"
+  ) +
+  theme_bw(base_size = 12)
+
+print(p_nmds)
+
+# ─────────────────────────────────────────────
+# 6. FIT ENVIRONMENTAL VECTORS ONTO NMDS
+#    (patchiness, site metrics, visit)
+# ─────────────────────────────────────────────
+
+env_df <- meta %>%
+  select(patchiness, visit, bee_richness, bee_abundance) %>%
+  mutate(across(everything(), as.numeric))
+
+ef <- envfit(
+  ord          = nmds,
+  env          = env_df,
+  permutations = 999,
+  na.rm        = TRUE
+)
+print(ef)
+
+# Add significant vectors to plot
+ef_scores <- as.data.frame(scores(ef, display = "vectors"))
+ef_scores$variable <- rownames(ef_scores)
+ef_scores$pval     <- ef$vectors$pvals
+ef_sig             <- ef_scores %>% filter(pval <= 0.05)
+
+arrow_scale <- 1.2
+
+p_nmds +
+  geom_segment(
+    data = ef_sig,
+    aes(x = 0, y = 0,
+        xend = NMDS1 * arrow_scale,
+        yend = NMDS2 * arrow_scale),
+    arrow      = arrow(length = unit(0.25, "cm")),
+    colour     = "black", linewidth = 0.7,
+    inherit.aes = FALSE
+  ) +
+  geom_text_repel(
+    data = ef_sig,
+    aes(x     = NMDS1 * arrow_scale,
+        y     = NMDS2 * arrow_scale,
+        label = variable),
+    colour      = "black", size = 3.2,
+    inherit.aes = FALSE,
+    box.padding = 0.3
+  ) +
+  labs(title = "NMDS with significant environmental vectors (envfit)")
+
+# ─────────────────────────────────────────────
+# 7. PERMANOVA — is composition different
+#    between focal and control sites?
+# ─────────────────────────────────────────────
+
+# Full model: site type + region + visit
+permanova <- adonis2(
+  sp_matrix ~ site + region + visit,
+  data       = meta,
+  method     = "bray",
+  permutations = 999,
+  by         = "margin"   # type III — each term adjusted for others
+)
+print(permanova)
+
+# ─────────────────────────────────────────────
+# 8. PERMDISP — test homogeneity of dispersion
+#    (assumption check for PERMANOVA)
+# ─────────────────────────────────────────────
+
+dist_mat <- vegdist(sp_matrix, method = "bray")
+
+disp_site <- betadisper(dist_mat, meta$site)
+print(permutest(disp_site, permutations = 999))
+plot(disp_site, main = "Dispersion by site type")
+
+# Also check by region
+disp_region <- betadisper(dist_mat, meta$region)
+print(permutest(disp_region, permutations = 999))
+
+# ─────────────────────────────────────────────
+# 9. HULLS per site type (optional visual aid)
+# ─────────────────────────────────────────────
+
+hulls <- nmds_scores %>%
+  group_by(site) %>%
+  slice(chull(NMDS1, NMDS2))
+
+p_nmds +
+  geom_polygon(
+    data        = hulls,
+    aes(x = NMDS1, y = NMDS2, fill = site, colour = site),
+    alpha       = 0.1,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_manual(
+    values = c("focal" = "#2166ac", "control" = "#d73027"),
+    name   = "Site type"
+  ) +
+  labs(title = "NMDS with convex hulls by site type")
+
+# ─────────────────────────────────────────────
+# IDENTIFY OUTLIERS
+# ─────────────────────────────────────────────
+
+row_summary <- data.frame(
+  surveyID      = meta$surveyID,
+  site          = meta$site,
+  region        = meta$region,
+  plot          = meta$plot,
+  visit         = meta$visit,
+  bee_abundance = rowSums(sp_matrix),
+  bee_richness  = rowSums(sp_matrix > 0)
+) %>% arrange(desc(bee_abundance))
+
+cat("Top 15 most abundant surveys:\n")
+print(head(row_summary, 15))
+
+cat("\nAbundance distribution:\n")
+print(quantile(row_summary$bee_abundance, 
+               probs = c(0, 0.25, 0.5, 0.75, 0.9, 0.95, 0.99, 1)))
+
+cat("\nRows with >50 bees:", sum(row_summary$bee_abundance > 50), "\n")
+cat("Rows with >100 bees:", sum(row_summary$bee_abundance > 100), "\n")
+
+# ─────────────────────────────────────────────
+# FIX: Hellinger transformation before NMDS
+# This square-root transforms proportions and
+# down-weights dominant species/surveys
+# ─────────────────────────────────────────────
+
+sp_hell <- decostand(sp_matrix, method = "hellinger")
+
+set.seed(42)
+nmds_hell <- metaMDS(
+  sp_hell,
+  distance      = "euclidean",  # Hellinger + euclidean = chord distance
+  k             = 2,
+  trymax        = 100,
+  autotransform = FALSE         # already transformed
+)
+
+cat("\nNMDS stress after Hellinger transformation:", nmds_hell$stress, "\n")
+
+# ─────────────────────────────────────────────
+# ALTERNATIVE FIX: presence/absence
+# Removes abundance influence entirely
+# ─────────────────────────────────────────────
+
+sp_pa <- decostand(sp_matrix, method = "pa")  # presence/absence
+
+set.seed(42)
+nmds_pa <- metaMDS(
+  sp_pa,
+  distance      = "jaccard",
+  k             = 2,
+  trymax        = 100,
+  autotransform = FALSE,
+  binary        = TRUE
+)
+
+cat("NMDS stress with presence/absence (Jaccard):", nmds_pa$stress, "\n")
+```
+
+```{r}
+# ─────────────────────────────────────────────
+# FIX: Hellinger transformation
+# ─────────────────────────────────────────────
+
+sp_hell <- decostand(sp_matrix, method = "hellinger")
+
+set.seed(42)
+nmds_hell <- metaMDS(
+  sp_hell,
+  distance      = "euclidean",  # Hellinger + euclidean = chord distance
+  k             = 2,
+  trymax        = 200,
+  autotransform = FALSE
+)
+cat("Stress (Hellinger):", nmds_hell$stress, "\n")
+
+# ─────────────────────────────────────────────
+# ALTERNATIVE: presence/absence + Jaccard
+# ─────────────────────────────────────────────
+
+set.seed(42)
+nmds_pa <- metaMDS(
+  sp_matrix,
+  distance      = "jaccard",
+  k             = 2,
+  trymax        = 200,
+  autotransform = FALSE,
+  binary        = TRUE
+)
+cat("Stress (Jaccard PA):", nmds_pa$stress, "\n")
+
+# ─────────────────────────────────────────────
+# REBUILD PLOTS WITH WHICHEVER HAS BETTER STRESS
+# Use nmds_hell or nmds_pa depending on result
+# ─────────────────────────────────────────────
+
+# Pick the better one (lower stress, ideally < 0.20)
+nmds_use <- if (nmds_hell$stress < nmds_pa$stress) nmds_hell else nmds_pa
+cat("Using stress:", nmds_use$stress, "\n")
+
+nmds_scores <- as.data.frame(scores(nmds_use, display = "sites"))
+nmds_scores <- bind_cols(nmds_scores, meta)
+
+# ─────────────────────────────────────────────
+# MAIN PLOT
+# ─────────────────────────────────────────────
+
+p_nmds <- ggplot(nmds_scores,
+                 aes(x = NMDS1, y = NMDS2,
+                     colour = site,
+                     shape  = region)) +
+  geom_point(alpha = 0.7, size = 2.5) +
+  scale_colour_manual(
+    values = c("focal"   = "#2166ac",
+               "control" = "#d73027"),
+    name = "Site type"
+  ) +
+  scale_shape_manual(
+    values = c(16, 17, 15, 18),
+    name   = "Region"
+  ) +
+  annotate("text",
+           x = Inf, y = -Inf,
+           hjust = 1.1, vjust = -0.5,
+           label = paste0("Stress = ", round(nmds_use$stress, 3)),
+           size = 3.5, colour = "grey40") +
+  labs(
+    x     = "NMDS1",
+    y     = "NMDS2",
+    title = "Bee community composition — NMDS"
+  ) +
+  theme_bw(base_size = 12)
+
+print(p_nmds)
+
+# ─────────────────────────────────────────────
+# ENVFIT on fixed NMDS
+# ─────────────────────────────────────────────
+
+env_df <- meta %>%
+  select(patchiness, visit, bee_richness, bee_abundance) %>%
+  mutate(across(everything(), as.numeric))
+
+ef <- envfit(
+  ord          = nmds_use,
+  env          = env_df,
+  permutations = 999,
+  na.rm        = TRUE
+)
+print(ef)
+
+ef_scores <- as.data.frame(scores(ef, display = "vectors"))
+ef_scores$variable <- rownames(ef_scores)
+ef_scores$pval     <- ef$vectors$pvals
+ef_sig             <- ef_scores %>% filter(pval <= 0.05)
+
+arrow_scale <- 0.8
+
+p_nmds +
+  geom_segment(
+    data = ef_sig,
+    aes(x = 0, y = 0,
+        xend = NMDS1 * arrow_scale,
+        yend = NMDS2 * arrow_scale),
+    arrow       = arrow(length = unit(0.25, "cm")),
+    colour      = "black", linewidth = 0.7,
+    inherit.aes = FALSE
+  ) +
+  geom_text_repel(
+    data = ef_sig,
+    aes(x     = NMDS1 * arrow_scale,
+        y     = NMDS2 * arrow_scale,
+        label = variable),
+    colour      = "black", size = 3.2,
+    inherit.aes = FALSE,
+    box.padding = 0.3
+  ) +
+  labs(title = "NMDS with significant environmental vectors (envfit)")
+
+# ─────────────────────────────────────────────
+# CONVEX HULLS
+# ─────────────────────────────────────────────
+
+hulls <- nmds_scores %>%
+  group_by(site) %>%
+  slice(chull(NMDS1, NMDS2))
+
+p_nmds +
+  geom_polygon(
+    data        = hulls,
+    aes(x = NMDS1, y = NMDS2,
+        fill = site, colour = site),
+    alpha       = 0.1,
+    inherit.aes = FALSE
+  ) +
+  scale_fill_manual(
+    values = c("focal" = "#2166ac", "control" = "#d73027"),
+    name   = "Site type"
+  ) +
+  labs(title = "NMDS with convex hulls by site type")
+```
+```{r}
+# ─────────────────────────────────────────────
+# IDENTIFY THE TWO OUTLIER POINTS
+# ─────────────────────────────────────────────
+
+nmds_scores <- as.data.frame(scores(nmds_hell, display = "sites"))
+nmds_scores <- bind_cols(nmds_scores, meta)
+
+# Flag anything far from origin
+outliers <- nmds_scores %>%
+  filter(abs(NMDS1) > 0.1 | abs(NMDS2) > 0.01) %>%
+  select(surveyID, site, region, plot, visit,
+         bee_richness, bee_abundance, NMDS1, NMDS2) %>%
+  arrange(desc(abs(NMDS1)))
+
+print(outliers)
+
+# Check which species they have
+outlier_ids <- outliers$surveyID
+sp_outliers <- sp_matrix[meta$surveyID %in% outlier_ids, ]
+sp_outliers_long <- as.data.frame(sp_outliers) %>%
+  mutate(surveyID = outlier_ids) %>%
+  pivot_longer(-surveyID, names_to = "species", values_to = "count") %>%
+  filter(count > 0) %>%
+  arrange(surveyID, desc(count))
+
+print(sp_outliers_long)
+```
+```{r}
+# ─────────────────────────────────────────────
+# AGGREGATE: sum species counts across visits
+# within each plot — gives 64 plots
+# ─────────────────────────────────────────────
+
+sp_agg <- as.data.frame(sp_matrix) %>%
+  mutate(plotID = meta$plotID) %>%
+  group_by(plotID) %>%
+  summarise(across(everything(), sum)) %>%
+  column_to_rownames("plotID")
+
+meta_agg <- meta %>%
+  select(plotID, site, region, plot) %>%
+  distinct(plotID, .keep_all = TRUE)
+
+# Remove species never seen
+sp_agg <- sp_agg[, colSums(sp_agg) > 0]
+
+cat("Aggregated matrix:", nrow(sp_agg), "plots x", ncol(sp_agg), "species\n")
+cat("Sparsity:", round(mean(sp_agg == 0) * 100, 1), "%\n")
+cat("Abundance range:", min(rowSums(sp_agg)), "-", max(rowSums(sp_agg)), "\n")
+
+# ─────────────────────────────────────────────
+# NMDS on aggregated plot-level data
+# ─────────────────────────────────────────────
+
+sp_agg_hell <- decostand(sp_agg, method = "hellinger")
+
+set.seed(42)
+nmds_agg <- metaMDS(
+  sp_agg_hell,
+  distance      = "euclidean",
+  k             = 2,
+  trymax        = 200,
+  autotransform = FALSE
+)
+cat("Stress (aggregated Hellinger):", nmds_agg$stress, "\n")
+
+# ─────────────────────────────────────────────
+# PLOT aggregated NMDS
+# ─────────────────────────────────────────────
+
+nmds_agg_scores <- as.data.frame(scores(nmds_agg, display = "sites"))
+nmds_agg_scores <- bind_cols(nmds_agg_scores, meta_agg)
+
+ggplot(nmds_agg_scores,
+       aes(x = NMDS1, y = NMDS2,
+           colour = site, shape = region)) +
+  geom_point(alpha = 0.8, size = 3) +
+  scale_colour_manual(
+    values = c("focal" = "#2166ac", "control" = "#d73027"),
+    name = "Site type"
+  ) +
+  scale_shape_manual(values = c(16, 17, 15, 18), name = "Region") +
+  annotate("text", x = Inf, y = -Inf, hjust = 1.1, vjust = -0.5,
+           label = paste0("Stress = ", round(nmds_agg$stress, 3)),
+           size = 3.5, colour = "grey40") +
+  labs(x = "NMDS1", y = "NMDS2",
+       title = "Bee community — NMDS aggregated across visits (plot level)") +
+  theme_bw(base_size = 12)
+
+# ─────────────────────────────────────────────
+# PERMANOVA on aggregated data
+# ─────────────────────────────────────────────
+
+dist_agg <- vegdist(sp_agg_hell, method = "euclidean")
+
+permanova_agg <- adonis2(
+  dist_agg ~ site + region,
+  data         = meta_agg,
+  permutations = 999,
+  by           = "margin"
+)
+print(permanova_agg)
+
+# PERMDISP
+disp_agg <- betadisper(dist_agg, meta_agg$site)
+print(permutest(disp_agg, permutations = 999))
+plot(disp_agg, main = "Dispersion by site type (aggregated)")
+```
+
+```{r}
+# 1. Try k=3 to check if stress improves meaningfully
+set.seed(42)
+nmds_3d <- metaMDS(sp_agg_hell, distance = "euclidean",
+                   k = 3, trymax = 200, autotransform = FALSE)
+cat("Stress k=3:", nmds_3d$stress, "\n")
+
+# 2. Add envfit vectors to the aggregated NMDS
+meta_agg2 <- meta_agg %>%
+  left_join(
+    data_all %>%
+      group_by(plotID) %>%
+      summarise(
+        patchiness    = mean(patchiness, na.rm = TRUE),
+        bee_richness  = sum(bee_richness, na.rm = TRUE),
+        bee_abundance = sum(bee_abundance, na.rm = TRUE),
+        hill_q0       = mean(hill_q0, na.rm = TRUE)
+      ),
+    by = "plotID"
+  )
+
+ef_agg <- envfit(
+  ord          = nmds_agg,
+  env          = meta_agg2 %>% select(patchiness, bee_richness,
+                                       bee_abundance, hill_q0),
+  permutations = 999,
+  na.rm        = TRUE
+)
+print(ef_agg)
+
+# 3. Convex hulls on the working NMDS
+hulls_agg <- nmds_agg_scores %>%
+  group_by(site) %>%
+  slice(chull(NMDS1, NMDS2))
+
+ggplot(nmds_agg_scores,
+       aes(x = NMDS1, y = NMDS2, colour = site, shape = region)) +
+  geom_point(alpha = 0.8, size = 3) +
+  geom_polygon(
+    data        = hulls_agg,
+    aes(x = NMDS1, y = NMDS2, fill = site, colour = site),
+    alpha       = 0.1, inherit.aes = FALSE
+  ) +
+  scale_colour_manual(
+    values = c("focal" = "#2166ac", "control" = "#d73027"),
+    name = "Site type"
+  ) +
+  scale_fill_manual(
+    values = c("focal" = "#2166ac", "control" = "#d73027"),
+    name = "Site type"
+  ) +
+  scale_shape_manual(values = c(16, 17, 15, 18), name = "Region") +
+  annotate("text", x = Inf, y = -Inf, hjust = 1.1, vjust = -0.5,
+           label = paste0("Stress = ", round(nmds_agg$stress, 3)),
+           size = 3.5, colour = "grey40") +
+  labs(x = "NMDS1", y = "NMDS2",
+       title = "Bee community — NMDS (plot level, aggregated across visits)") +
+  theme_bw(base_size = 12)
+```
+```{r}
+# ─────────────────────────────────────────────
+# REGION-SEPARATE NMDS — aggregated plots
+# ─────────────────────────────────────────────
+
+regions <- unique(meta_agg$region)
+
+nmds_region_list  <- list()
+scores_region_list <- list()
+
+for (r in regions) {
+  
+  cat("\n── Region:", r, "──\n")
+  
+  # Subset
+  idx       <- meta_agg$region == r
+  sp_sub    <- sp_agg[idx, ]
+  meta_sub  <- meta_agg[idx, ]
+  
+  # Drop species not present in this region
+  sp_sub <- sp_sub[, colSums(sp_sub) > 0]
+  cat("  Plots:", nrow(sp_sub), "| Species:", ncol(sp_sub), "\n")
+  cat("  Sparsity:", round(mean(sp_sub == 0) * 100, 1), "%\n")
+  
+  # Hellinger transform
+  sp_sub_hell <- decostand(sp_sub, method = "hellinger")
+  
+  # NMDS
+  set.seed(42)
+  nmds_r <- metaMDS(
+    sp_sub_hell,
+    distance      = "euclidean",
+    k             = 2,
+    trymax        = 200,
+    autotransform = FALSE
+  )
+  cat("  Stress:", round(nmds_r$stress, 3), "\n")
+  
+  # PERMANOVA within region
+  dist_r <- vegdist(sp_sub_hell, method = "euclidean")
+  perm_r <- adonis2(dist_r ~ site, data = meta_sub,
+                    permutations = 999, by = "margin")
+  cat("  PERMANOVA site effect: F =",
+      round(perm_r$F[1], 2),
+      "R2 =", round(perm_r$R2[1], 3),
+      "p =", perm_r$`Pr(>F)`[1], "\n")
+  
+  # Store scores
+  sc <- as.data.frame(scores(nmds_r, display = "sites"))
+  sc$site   <- meta_sub$site
+  sc$region <- r
+  sc$plotID <- meta_sub$plotID
+  sc$stress <- round(nmds_r$stress, 3)
+  
+  nmds_region_list[[r]]   <- nmds_r
+  scores_region_list[[r]] <- sc
+}
+
+# ─────────────────────────────────────────────
+# COMBINE SCORES AND PLOT AS FACETS
+# ─────────────────────────────────────────────
+
+all_region_scores <- bind_rows(scores_region_list)
+
+# Stress label per facet
+stress_labels <- all_region_scores %>%
+  distinct(region, stress) %>%
+  mutate(label = paste0("Stress = ", stress),
+         NMDS1 = Inf, NMDS2 = -Inf)
+
+# Hulls per region x site
+hulls_region <- all_region_scores %>%
+  group_by(region, site) %>%
+  slice(chull(NMDS1, NMDS2))
+
+ggplot(all_region_scores,
+       aes(x = NMDS1, y = NMDS2, colour = site)) +
+  geom_point(alpha = 0.8, size = 2.5) +
+  geom_polygon(
+    data        = hulls_region,
+    aes(x = NMDS1, y = NMDS2, fill = site, colour = site),
+    alpha       = 0.15,
+    inherit.aes = FALSE
+  ) +
+  geom_text(
+    data        = stress_labels,
+    aes(x = NMDS1, y = NMDS2, label = label),
+    hjust = 1.1, vjust = -0.5,
+    size = 3, colour = "grey40",
+    inherit.aes = FALSE
+  ) +
+  scale_colour_manual(
+    values = c("focal" = "#2166ac", "control" = "#d73027"),
+    name   = "Site type"
+  ) +
+  scale_fill_manual(
+    values = c("focal" = "#2166ac", "control" = "#d73027"),
+    name   = "Site type"
+  ) +
+  facet_wrap(~region, scales = "free") +
+  labs(
+    x     = "NMDS1",
+    y     = "NMDS2",
+    title = "Bee community composition by region — focal vs control"
+  ) +
+  theme_bw(base_size = 11) +
+  theme(legend.position = "bottom")
+```
+```{r}
+# Best of both worlds:
+# 1. Single global NMDS (your new code) for the figure
+# 2. Single global PERMANOVA with region as covariate for overall test
+# 3. Per-region PERMANOVA for the regional breakdown table
+# 4. Ellipses for visualisation (your new code)
+# 5. Presence/absence + Sorensen (your new code)
+# ─────────────────────────────────────────────
+# CHECK: are row counts aligned?
+# ─────────────────────────────────────────────
+
+cat("comm_matrix rows:", nrow(comm_matrix), "\n")
+cat("meta rows:", nrow(meta), "\n")
+cat("Region distribution in meta:\n")
+print(table(meta$region))
+
+# ─────────────────────────────────────────────
+# FIX 1: Replace NAs with 0 in comm_matrix
+# ─────────────────────────────────────────────
+
+comm_matrix[is.na(comm_matrix)] <- 0
+
+# ─────────────────────────────────────────────
+# FIX 2: Rebuild meta with row index to ensure
+# alignment with comm_matrix
+# ─────────────────────────────────────────────
+
+# Attach region/site back to comm_matrix rows safely
+comm_df <- comm_matrix
+comm_df$region <- meta$region
+comm_df$site   <- meta$site
+comm_df$plotID <- meta$plotID
+
+regions        <- unique(meta$region)
+region_results <- list()
+
+for (r in regions) {
+  
+  cat("\n── Region:", r, "──\n")
+  
+  # Subset rows for this region
+  sub_df   <- comm_df[comm_df$region == r, ]
+  meta_sub <- sub_df[, c("region", "site", "plotID")]
+  sp_sub   <- sub_df[, !names(sub_df) %in% c("region", "site", "plotID")]
+  
+  # Drop species absent in this region
+  sp_sub <- sp_sub[, colSums(sp_sub, na.rm = TRUE) > 0, drop = FALSE]
+  
+  cat("  Plots:", nrow(sp_sub),
+      "| Species:", ncol(sp_sub), "\n")
+  cat("  Sparsity:", round(mean(sp_sub == 0, na.rm = TRUE) * 100, 1), "%\n")
+  
+  # PERMANOVA
+  dist_r <- vegdist(as.matrix(sp_sub), method = "bray", binary = TRUE)
+  perm_r <- adonis2(dist_r ~ site, data = meta_sub,
+                    permutations = 999)
+  
+  cat("  PERMANOVA: F =",  round(perm_r$F[1], 2),
+      "| R2 =", round(perm_r$R2[1], 3),
+      "| p =",  perm_r$`Pr(>F)`[1], "\n")
+  
+  region_results[[r]] <- data.frame(
+    region = r,
+    F_val  = round(perm_r$F[1], 2),
+    R2     = round(perm_r$R2[1], 3),
+    p      = perm_r$`Pr(>F)`[1]
+  )
+}
+
+# ─────────────────────────────────────────────
+# SUMMARY TABLE with BH correction
+# ─────────────────────────────────────────────
+
+region_df       <- bind_rows(region_results)
+region_df$p_adj <- p.adjust(region_df$p, method = "BH")
+region_df$sig   <- case_when(
+  region_df$p_adj < 0.001 ~ "***",
+  region_df$p_adj < 0.01  ~ "**",
+  region_df$p_adj < 0.05  ~ "*",
+  TRUE                    ~ "ns"
+)
+
+print(region_df)
+```
 
