@@ -543,10 +543,8 @@ patchiness_patchwork
 # Bee data
 ```{r bee data overview numbers}
 # total species count
-length(which(names(bee_data) == "Andrena aeneiventris"):
-         which(names(bee_data) == "Stelis punctulatissima"))
-
-
+total_species <- length(which(names(bee_data) == "Andrena aeneiventris")
+                       :which(names(bee_data) == "Stelis punctulatissima"))
 
 # Derive species column block by names (robust to column reordering)
 start <- match("Andrena aeneiventris", names(bee_data))
@@ -562,7 +560,6 @@ focal_pres   <- colSums(bee_data[bee_data$site == "focal",
 # Number of Bee species by site
 sum(control_pres)
 sum(focal_pres)
-
 ```
 
 Venn Diagram of species composition
