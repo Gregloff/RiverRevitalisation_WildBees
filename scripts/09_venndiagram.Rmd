@@ -1,0 +1,131 @@
+---
+title: "09_venndiagram"
+output: html_document
+---
+
+```{r load packages}
+library(dplyr)
+library(ggplot2)
+library(ggVennDiagram)
+library(grid)
+library(patchwork)
+library(posterior)
+library(purrr)
+library(stringr)
+library(tidyr)
+library(tidyverse)
+library(VennDiagram)
+```
+
+```{r Load data}
+bee_data <- read.csv(file.path("..", "data", "cleaned", "bee_data.csv"),
+           stringsAsFactors = FALSE,
+           check.names = FALSE)
+
+rldata <- read.csv(file.path("..", "data", "raw", "rldata.csv"),
+           stringsAsFactors = FALSE,
+           check.names = FALSE)
+```
+
+Venn Diagram of species composition
+```{r}
+# Get species present in each site type
+species_focal   <- names(which(colSums(bee_data[bee_data$site == "focal",   species_cols] > 0, na.rm = TRUE) > 0))
+species_control <- names(which(colSums(bee_data[bee_data$site == "control", species_cols] > 0, na.rm = TRUE) > 0))
+
+# Quick check
+length(species_focal)
+length(species_control)
+length(intersect(species_focal, species_control))
+
+n_focal      <- length(species_focal)
+n_control    <- length(species_control)
+n_shared     <- length(intersect(species_focal, species_control))
+n_only_focal   <- n_focal   - n_shared
+n_only_control <- n_control - n_shared
+
+grid.newpage()
+venn <- draw.pairwise.venn(
+  area1          = n_focal,
+  area2          = n_control,
+  cross.area     = n_shared,
+  category       = c("Focal", "Control"),
+  fill           = c("#2C7FB8", "#D95F09"),
+  alpha          = 0.4,
+  col            = "white",
+  cex            = 1.8,
+  cat.cex        = 1.5,
+  cat.col        = c("#2C7FB8", "#D95F09"),
+  cat.fontface   = "bold",
+  fontfamily     = "sans",
+  cat.fontfamily = "sans",
+  margin         = 0.08,
+  cat.pos        = c(-20, 20),
+  cat.dist       = 0.06
+)
+```
+
+```{r print venn diagram bee species by site}
+tiff("../output/figures/venn_species_sites.tiff",
+     width = 3000, height = 2500, res = 600, compression = "lzw")
+grid.draw(venn)
+dev.off()
+```
+
+
+RL status df
+```{r}
+start <- match("Andrena aeneiventris", names(bee_data))
+end   <- match("Stelis punctulatissima", names(bee_data))
+species_cols <- start:end
+
+
+species_names <- names(bee_data)[species_cols]
+
+
+clean_names <- function(x) {
+  x |>
+    str_trim() |>
+    str_to_lower()
+}
+
+species_df <- tibble(
+  species = species_names,
+  species_clean = clean_names(species_names)
+)
+
+rldata_clean <- rldata |>
+  mutate(species_clean = clean_names(ESP))
+
+# join Rl status to bee_data
+rl_lookup <- species_df |>
+  left_join(rldata_clean, by = "species_clean")
+
+# set levels of interest
+rl_levels <- c("NT", "VU", "EN", "CR")
+
+rl_species <- rl_lookup |>
+  filter(RL_2022 %in% rl_levels) |>
+  pull(species)
+
+# Venn groups
+species_shared        <- intersect(species_focal, species_control)
+species_only_focal    <- setdiff(species_focal, species_control)
+species_only_control  <- setdiff(species_control, species_focal)
+
+rl_focal_only    <- intersect(species_only_focal, rl_species)
+rl_control_only  <- intersect(species_only_control, rl_species)
+rl_shared        <- intersect(species_shared, rl_species)
+
+
+cat("\n--- FOCAL ONLY (Red List) ---\n\n")
+cat(paste(sort(rl_focal_only), collapse = "\n"))
+
+cat("\n\n--- CONTROL ONLY (Red List) ---\n\n")
+cat(paste(sort(rl_control_only), collapse = "\n"))
+
+cat("\n\n--- SHARED (Red List) ---\n\n")
+cat(paste(sort(rl_shared), collapse = "\n"))
+# Species list added to Venn Diagram in separate sofwtware
+```
+

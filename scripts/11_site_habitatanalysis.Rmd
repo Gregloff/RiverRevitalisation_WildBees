@@ -1,0 +1,934 @@
+---
+title: "11_site_habitatanalysis"
+output: html_document
+---
+
+```{r load packages}
+library(dplyr)
+library(sf)
+library(terra)
+library(scales)
+library(ggplot2)
+```
+
+```{r load layers}
+habitat <- rast("../data/raw/habitatmap_v1_1_20241025.tif")
+
+
+layers <- st_layers("../data/raw/merged_sites.gpkg")$name
+
+# remove layer_styles
+layers <- layers[layers != "layer_styles"]
+
+sites <- do.call(
+  rbind,
+  lapply(layers, function(x) {
+
+    tmp <- st_read(
+      "../data/raw/merged_sites.gpkg",
+      layer = x,
+      quiet = TRUE
+    )
+
+    tmp <- st_sf(
+      site_name = x,
+      geometry = st_geometry(tmp)
+    )
+
+    tmp
+  })
+)
+```
+
+# 500m buffer
+```{r buffer habiat map}
+# sites_vect <- terra::vect(sites)
+# 
+# buffer500 <- terra::buffer(sites_vect, 500)
+# 
+# hab_crop <- terra::crop(habitat, buffer500)
+# 
+# hab_mask <- terra::mask(hab_crop, buffer500)
+```
+
+```{r save or load 500 buffer layer}
+# saveRDS(sites_vect, "../data/cleaned/sites_vect.rds")
+# saveRDS(buffer500, "../data/cleaned/buffer500.rds")
+# saveRDS(hab_crop, "../data/cleaned/hab_crop_500m.rds")
+# saveRDS(hab_mask, "../data/cleaned/hab_mask_500m.rds")
+
+sites_vect <- readRDS("../data/cleaned/sites_vect.rdsrds")
+buffer500 <- readRDS("../data/cleaned/buffer500.rds")
+hab_crop <- readRDS("../data/cleaned/hab_crop_500m.rds")
+hab_mask <- readRDS("../data/cleaned/hab_mask_500m.rds")
+```
+
+
+```{r whch habitat types occur}
+vals <- terra::extract(hab_mask, buffer500)
+
+sort(table(vals$habitatmap_v1_1_20241025),
+     decreasing = TRUE)[1:50]
+
+sort(unique(vals$habitatmap_v1_1_20241025))
+```
+
+Assign Swisstopo values
+```{r}
+vals <- vals %>%
+  mutate(
+    habitat_group = substr(
+      as.character(habitatmap_v1_1_20241025),
+      1,
+      1
+    ),
+    habitat_group = recode(
+      habitat_group,
+      "1" = "Water",
+      "2" = "Wetland",
+      "3" = "Rock",
+      "4" = "Grassland",
+      "5" = "Shrub",
+      "6" = "Forest",
+      "7" = "Ruderal",
+      "8" = "Agriculture",
+      "9" = "Urban"
+    )
+  )
+
+buffer500$site_name <- sites$site_name
+vals$site_name <- buffer500$site_name[vals$ID]
+
+
+props <- vals %>%
+  count(site_name, habitat_group) %>%
+  group_by(site_name) %>%
+  mutate(
+    proportion = n / sum(n)
+  )
+```
+
+```{r}
+props_plot <- props %>%
+  mutate(
+    treatment = ifelse(
+      grepl("focal", site_name),
+      "Focal",
+      "Control"
+    ),
+
+    region = case_when(
+      grepl("Aire", site_name) ~ "Aire",
+      grepl("Scheulte", site_name) ~ "Scheulte",
+      grepl("Schwarzbach", site_name) ~ "Schwarzbach",
+      grepl("Thiele", site_name) ~ "Thiele"
+    )
+  ) %>%
+  mutate(
+    site_order = factor(
+      paste(region, treatment),
+      levels = c(
+        "Aire Control",
+        "Aire Focal",
+        "Scheulte Control",
+        "Scheulte Focal",
+        "Schwarzbach Control",
+        "Schwarzbach Focal",
+        "Thiele Control",
+        "Thiele Focal"
+      )
+    )
+  )
+
+# optional: collapse minor classes to other
+props_plot <- props_plot %>%
+  mutate(
+    habitat_group = ifelse(
+      habitat_group %in% c(
+        "Wetland",
+        "Rock",
+        "Shrub",
+        "Ruderal"
+      ),
+      "Other",
+      habitat_group
+    )
+  ) %>%
+  group_by(
+    site_order,
+    habitat_group
+  ) %>%
+  summarise(
+    proportion = sum(proportion),
+    .groups = "drop"
+  )
+
+ggplot(
+  props_plot,
+  aes(
+    x = site_order,
+    y = proportion,
+    fill = habitat_group
+  )
+) +
+  geom_col(width = 0.8) +
+  scale_fill_manual(
+    values = c(
+      "Water" = "#2b83ba",
+      "Forest" = "#1b7837",
+      "Grassland" = "#7fbf7b",
+      "Agriculture" = "#d9a441",
+      "Urban" = "#d73027",
+      "Other" = "grey70"
+    )
+  ) +
+  scale_y_continuous(
+    labels = percent_format()
+  ) +
+  labs(
+    x = NULL,
+    y = "Proportion of surrounding habitat",
+    fill = "Habitat class"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    ),
+    panel.grid.minor = element_blank()
+  )
+```
+
+Adjust categories 
+```{r}
+vals <- vals %>%
+  mutate(
+    typo_class = substr(
+      as.character(habitatmap_v1_1_20241025),
+      1,
+      1
+    ),
+
+    habitat_group = case_when(
+      typo_class == "6" ~ "Forest",
+      typo_class %in% c("4", "8") ~ "Agriculture",
+      typo_class == "9" ~ "Urban",
+      typo_class == "1" ~ "Water",
+      TRUE ~ "Other"
+    )
+  )
+
+buffer500$site_name <- sites$site_name
+vals$site_name <- buffer500$site_name[vals$ID]
+
+
+props <- vals %>%
+  count(site_name, habitat_group) %>%
+  group_by(site_name) %>%
+  mutate(
+    proportion = n / sum(n)
+  )
+```
+
+```{r}
+props_plot <- props %>%
+  mutate(
+    treatment = ifelse(
+      grepl("focal", site_name),
+      "Focal",
+      "Control"
+    ),
+
+    region = case_when(
+      grepl("Aire", site_name) ~ "Aire",
+      grepl("Scheulte", site_name) ~ "Scheulte",
+      grepl("Schwarzbach", site_name) ~ "Schwarzbach",
+      grepl("Thiele", site_name) ~ "Thiele"
+    )
+  ) %>%
+  mutate(
+    site_order = factor(
+      paste(region, treatment),
+      levels = c(
+        "Aire Control",
+        "Aire Focal",
+        "Scheulte Control",
+        "Scheulte Focal",
+        "Schwarzbach Control",
+        "Schwarzbach Focal",
+        "Thiele Control",
+        "Thiele Focal"
+      )
+    )
+  )
+
+# optional: collapse minor classes to other
+props_plot <- props_plot %>%
+  mutate(
+    habitat_group = ifelse(
+      habitat_group %in% c(
+        "Wetland",
+        "Rock",
+        "Shrub",
+        "Ruderal"
+      ),
+      "Other",
+      habitat_group
+    )
+  ) %>%
+  group_by(
+    site_order,
+    habitat_group
+  ) %>%
+  summarise(
+    proportion = sum(proportion),
+    .groups = "drop"
+  )
+
+ggplot(
+  props_plot,
+  aes(
+    x = site_order,
+    y = proportion,
+    fill = habitat_group
+  )
+) +
+  geom_col(width = 0.8) +
+  scale_fill_manual(
+    values = c(
+      "Water" = "#2b83ba",
+      "Forest" = "#1b7837",
+      "Grassland" = "#7fbf7b",
+      "Agriculture" = "#d9a441",
+      "Urban" = "#d73027",
+      "Other" = "grey70"
+    )
+  ) +
+  scale_y_continuous(
+    labels = percent_format()
+  ) +
+  labs(
+    x = NULL,
+    y = "Proportion of surrounding habitat",
+    fill = "Habitat class"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    ),
+    panel.grid.minor = element_blank()
+  )
+```
+# 250m buffer
+```{r}
+buffer250 <- terra::buffer(sites_vect, 250)
+
+buffer250$site_name <- sites$site_name
+
+vals250 <- terra::extract(
+  hab_mask,
+  buffer250
+)
+
+vals250$site_name <- buffer250$site_name[vals250$ID]
+```
+
+Assign Swisstopo values
+```{r}
+vals250 <- vals250 %>%
+  mutate(
+    habitat_group = substr(
+      as.character(habitatmap_v1_1_20241025),
+      1,
+      1
+    ),
+    habitat_group = recode(
+      habitat_group,
+      "1" = "Water",
+      "2" = "Wetland",
+      "3" = "Rock",
+      "4" = "Grassland",
+      "5" = "Shrub",
+      "6" = "Forest",
+      "7" = "Ruderal",
+      "8" = "Agriculture",
+      "9" = "Urban"
+    )
+  )
+```
+
+Stacked barplot with main categories
+```{r}
+#calculate proportions
+props250 <- vals250 %>%
+  count(site_name, habitat_group) %>%
+  group_by(site_name) %>%
+  mutate(
+    proportion = n / sum(n)
+  )
+
+props_plot250 <- props250 %>%
+  mutate(
+    treatment = ifelse(
+      grepl("focal", site_name),
+      "Focal",
+      "Control"
+    ),
+    region = case_when(
+      grepl("Aire", site_name) ~ "Aire",
+      grepl("Scheulte", site_name) ~ "Scheulte",
+      grepl("Schwarzbach", site_name) ~ "Schwarzbach",
+      grepl("Thiele", site_name) ~ "Thiele"
+    )
+  ) %>%
+  mutate(
+    site_order = factor(
+      paste(region, treatment),
+      levels = c(
+        "Aire Control",
+        "Aire Focal",
+        "Scheulte Control",
+        "Scheulte Focal",
+        "Schwarzbach Control",
+        "Schwarzbach Focal",
+        "Thiele Control",
+        "Thiele Focal"
+      )
+    )
+  ) %>%
+  mutate(
+    habitat_group = ifelse(
+      habitat_group %in% c(
+        "Wetland",
+        "Rock",
+        "Shrub",
+        "Ruderal"
+      ),
+      "Other",
+      habitat_group
+    )
+  ) %>%
+  group_by(site_order, habitat_group) %>%
+  summarise(
+    proportion = sum(proportion),
+    .groups = "drop"
+  )
+
+ggplot(
+  props_plot250,
+  aes(
+    x = site_order,
+    y = proportion,
+    fill = habitat_group
+  )
+) +
+  geom_col(width = 0.8) +
+  scale_fill_manual(
+    values = c(
+      "Water" = "#2b83ba",
+      "Forest" = "#1b7837",
+      "Grassland" = "#7fbf7b",
+      "Agriculture" = "#d9a441",
+      "Urban" = "#d73027",
+      "Other" = "grey70"
+    )
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format()
+  ) +
+  labs(
+    x = NULL,
+    y = "Proportion of surrounding habitat",
+    fill = "Habitat class"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    ),
+    panel.grid.minor = element_blank()
+  )
+```
+Adjusted categorisation
+```{r}
+vals250 <- vals250 %>%
+  mutate(
+    typo_class = substr(
+      as.character(habitatmap_v1_1_20241025),
+      1,
+      1
+    ),
+
+    habitat_group = case_when(
+      typo_class == "6" ~ "Forest",
+      typo_class %in% c("4", "8") ~ "Agricultural landscape",
+      typo_class == "9" ~ "Urban",
+      typo_class == "1" ~ "Water",
+      TRUE ~ "Other"
+    )
+  )
+
+#calculate proportions
+props250 <- vals250 %>%
+  count(site_name, habitat_group) %>%
+  group_by(site_name) %>%
+  mutate(
+    proportion = n / sum(n)
+  )
+
+props_plot250 <- props250 %>%
+  mutate(
+    treatment = ifelse(
+      grepl("focal", site_name),
+      "Focal",
+      "Control"
+    ),
+    region = case_when(
+      grepl("Aire", site_name) ~ "Aire",
+      grepl("Scheulte", site_name) ~ "Scheulte",
+      grepl("Schwarzbach", site_name) ~ "Schwarzbach",
+      grepl("Thiele", site_name) ~ "Thiele"
+    )
+  ) %>%
+  mutate(
+    site_order = factor(
+      paste(region, treatment),
+      levels = c(
+        "Aire Control",
+        "Aire Focal",
+        "Scheulte Control",
+        "Scheulte Focal",
+        "Schwarzbach Control",
+        "Schwarzbach Focal",
+        "Thiele Control",
+        "Thiele Focal"
+      )
+    )
+  ) %>%
+  mutate(
+    habitat_group = ifelse(
+      habitat_group %in% c(
+        "Wetland",
+        "Rock",
+        "Shrub",
+        "Ruderal"
+      ),
+      "Other",
+      habitat_group
+    )
+  ) %>%
+  group_by(site_order, habitat_group) %>%
+  summarise(
+    proportion = sum(proportion),
+    .groups = "drop"
+  )
+
+ggplot(
+  props_plot250,
+  aes(
+    x = site_order,
+    y = proportion,
+    fill = habitat_group
+  )
+) +
+  geom_col(width = 0.8) +
+  scale_fill_manual(
+    values = c(
+      "Water" = "#2b83ba",
+      "Forest" = "#1b7837",
+      "Grassland" = "#7fbf7b",
+      "Agricultural landscape" = "#d9a441",
+      "Urban" = "#d73027",
+      "Other" = "grey70"
+    )
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format()
+  ) +
+  labs(
+    x = NULL,
+    y = "Proportion of surrounding habitat",
+    fill = "Habitat class"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    ),
+    panel.grid.minor = element_blank()
+  )
+```
+
+# 300 m buffer
+```{r}
+buffer300 <- terra::buffer(sites_vect, 300)
+
+buffer300$site_name <- sites$site_name
+
+vals300 <- terra::extract(
+  hab_mask,
+  buffer300
+)
+
+vals300$site_name <- buffer300$site_name[vals300$ID]
+```
+
+Assign Swisstopo values
+```{r}
+vals300 <- vals300 %>%
+  mutate(
+    habitat_group = substr(
+      as.character(habitatmap_v1_1_20241025),
+      1,
+      1
+    ),
+    habitat_group = recode(
+      habitat_group,
+      "1" = "Water",
+      "2" = "Wetland",
+      "3" = "Rock",
+      "4" = "Grassland",
+      "5" = "Shrub",
+      "6" = "Forest",
+      "7" = "Ruderal",
+      "8" = "Agriculture",
+      "9" = "Urban"
+    )
+  )
+```
+
+Stacked barplot with main categories
+```{r}
+#calculate proportions
+props300 <- vals300 %>%
+  count(site_name, habitat_group) %>%
+  group_by(site_name) %>%
+  mutate(
+    proportion = n / sum(n)
+  )
+
+props_plot300 <- props300 %>%
+  mutate(
+    treatment = ifelse(
+      grepl("focal", site_name),
+      "Focal",
+      "Control"
+    ),
+    region = case_when(
+      grepl("Aire", site_name) ~ "Aire",
+      grepl("Scheulte", site_name) ~ "Scheulte",
+      grepl("Schwarzbach", site_name) ~ "Schwarzbach",
+      grepl("Thiele", site_name) ~ "Thiele"
+    )
+  ) %>%
+  mutate(
+    site_order = factor(
+      paste(region, treatment),
+      levels = c(
+        "Aire Control",
+        "Aire Focal",
+        "Scheulte Control",
+        "Scheulte Focal",
+        "Schwarzbach Control",
+        "Schwarzbach Focal",
+        "Thiele Control",
+        "Thiele Focal"
+      )
+    )
+  ) %>%
+  mutate(
+    habitat_group = ifelse(
+      habitat_group %in% c(
+        "Wetland",
+        "Rock",
+        "Shrub",
+        "Ruderal"
+      ),
+      "Other",
+      habitat_group
+    )
+  ) %>%
+  group_by(site_order, habitat_group) %>%
+  summarise(
+    proportion = sum(proportion),
+    .groups = "drop"
+  )
+
+ggplot(
+  props_plot300,
+  aes(
+    x = site_order,
+    y = proportion,
+    fill = habitat_group
+  )
+) +
+  geom_col(width = 0.8) +
+  scale_fill_manual(
+    values = c(
+      "Water" = "#2b83ba",
+      "Forest" = "#1b7837",
+      "Grassland" = "#7fbf7b",
+      "Agriculture" = "#d9a441",
+      "Urban" = "#d73027",
+      "Other" = "grey70"
+    )
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format()
+  ) +
+  labs(
+    x = NULL,
+    y = "Proportion of surrounding habitat",
+    fill = "Habitat class"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    ),
+    panel.grid.minor = element_blank()
+  )
+```
+Adjusted categorisation
+```{r}
+vals300 <- vals300 %>%
+  mutate(
+    typo_class = substr(
+      as.character(habitatmap_v1_1_20241025),
+      1,
+      1
+    ),
+
+    habitat_group = case_when(
+      typo_class == "6" ~ "Forest",
+      typo_class %in% c("4", "8") ~ "Agricultural landscape",
+      typo_class == "9" ~ "Urban",
+      typo_class == "1" ~ "Water",
+      TRUE ~ "Other"
+    )
+  )
+
+#calculate proportions
+props300 <- vals300 %>%
+  count(site_name, habitat_group) %>%
+  group_by(site_name) %>%
+  mutate(
+    proportion = n / sum(n)
+  )
+
+props_plot300 <- props300 %>%
+  mutate(
+    treatment = ifelse(
+      grepl("focal", site_name),
+      "Focal",
+      "Control"
+    ),
+    region = case_when(
+      grepl("Aire", site_name) ~ "Aire",
+      grepl("Scheulte", site_name) ~ "Scheulte",
+      grepl("Schwarzbach", site_name) ~ "Schwarzbach",
+      grepl("Thiele", site_name) ~ "Thiele"
+    )
+  ) %>%
+  mutate(
+    site_order = factor(
+      paste(region, treatment),
+      levels = c(
+        "Aire Control",
+        "Aire Focal",
+        "Scheulte Control",
+        "Scheulte Focal",
+        "Schwarzbach Control",
+        "Schwarzbach Focal",
+        "Thiele Control",
+        "Thiele Focal"
+      )
+    )
+  ) %>%
+  mutate(
+    habitat_group = ifelse(
+      habitat_group %in% c(
+        "Wetland",
+        "Rock",
+        "Shrub",
+        "Ruderal"
+      ),
+      "Other",
+      habitat_group
+    )
+  ) %>%
+  group_by(site_order, habitat_group) %>%
+  summarise(
+    proportion = sum(proportion),
+    .groups = "drop"
+  )
+
+ggplot(
+  props_plot300,
+  aes(
+    x = site_order,
+    y = proportion,
+    fill = habitat_group
+  )
+) +
+  geom_col(width = 0.8) +
+  scale_fill_manual(
+    values = c(
+      "Water" = "#2b83ba",
+      "Forest" = "#1b7837",
+      "Grassland" = "#7fbf7b",
+      "Agricultural landscape" = "#d9a441",
+      "Urban" = "#d73027",
+      "Other" = "grey70"
+    )
+  ) +
+  scale_y_continuous(
+    labels = scales::percent_format()
+  ) +
+  labs(
+    x = NULL,
+    y = "Proportion of surrounding habitat",
+    fill = "Habitat class"
+  ) +
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,
+      hjust = 1
+    ),
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r}
+tiff(
+  filename = "../output/figures/sitelandscape_500m.tiff",
+  width = 240,
+  height = 140,
+  units = "mm",
+  res = 600,
+  compression = "lzw",
+  bg = "white"
+)
+
+cols <- c(
+  "#1b7837",  # Forest
+  "#d9a441",  # Agriculture
+  "#d73027",  # Urban
+  "#2b83ba",  # Water
+  "white"    # Other
+)
+
+par(
+  mfcol = c(2,4),
+  bg = "white",
+  mar = c(0.3,0.3,2.5,0.3),
+  oma = c(3,0,0,0)
+)
+
+for(i in seq_along(site_order)){
+
+  idx <- which(buffer500$site_name == site_order[i])
+
+  site <- buffer500[idx, ]
+
+  site_crop <- crop(hab_mask, site)
+
+  site_simple <- app(
+    site_crop,
+    fun = function(x){
+
+      first_digit <- substr(
+        as.character(x),
+        1,
+        1
+      )
+
+      out <- rep(5, length(x))
+
+      out[first_digit == "6"] <- 1
+      out[first_digit %in% c("4","8")] <- 2
+      out[first_digit == "9"] <- 3
+      out[first_digit == "1"] <- 4
+
+      out
+    }
+  )
+
+  plot(
+    site_simple,
+    col = cols,
+    legend = FALSE,
+    axes = FALSE,
+    box = FALSE,
+    colNA = NA,   # removes grey background
+    main = pretty_names[i],
+    cex.main = 1.6,
+    font.main = 2
+  )
+
+  # buffer
+  plot(
+    site,
+    add = TRUE,
+    border = "black",
+    lwd = 2
+  )
+
+  # site polygon
+  plot(
+    sites_vect[idx, ],
+    add = TRUE,
+    border = "purple",
+    lwd = 3
+  )
+
+
+  # scale bar in same position in every panel
+  cent <- terra::centroids(site)
+
+  xy <- terra::crds(cent)
+
+  x0 <- xy[1] - 500
+  y0 <- xy[2] - 550
+
+  segments(
+    x0,
+    y0,
+    x0 + 200,
+    y0,
+    lwd = 3
+  )
+
+  text(
+    x0 + 100,
+    y0 + 30,
+    labels = "200 m",
+    cex = 0.7
+  )
+}
+
+dev.off()
+```
+
+```{r}
+tiff(
+  filename = "../output/figures/habitat_context_500m.tiff",
+  width = 240,
+  height = 140,
+  units = "mm",
+  res = 600,
+  compression = "lzw"
+)
+
+print(p_sitelandscape)
+
+dev.off()
+```
+

@@ -1,0 +1,119 @@
+---
+title: "10_bee_specieslist"
+output: html_document
+---
+
+```{r load packages}
+library(dplyr)
+library(gt)
+library(tidyr)
+```
+
+```{r load data}
+beedata <- read.csv(file.path("..", "data", "raw", "beedata.csv"),
+           stringsAsFactors = FALSE,
+           check.names = FALSE)
+```
+
+## Bee species list
+```{r bee species list}
+# remove Wasp row
+beedata <- beedata %>%  filter(Gattung != "Wasp")
+
+species_table <- beedata %>%
+  mutate(
+    bee_species = paste(Gattung, Art),
+    Weibchen   = replace_na(Weibchen, 0),
+    Arbeiterin = replace_na(Arbeiterin, 0),
+    Männchen   = replace_na(Männchen, 0),
+    region_site = paste(site, region, sep = "_")
+  ) %>%
+  group_by(bee_species) %>%
+  mutate(
+    RLstatus = first(na.omit(RLstatus))
+  ) %>%
+  ungroup()
+
+abundances <- species_table %>%
+  count(bee_species, region_site) %>%
+  pivot_wider(
+    names_from = region_site,
+    values_from = n,
+    values_fill = 0
+  )
+
+sexes <- species_table %>%
+  group_by(bee_species) %>%
+  summarise(
+    RLstatus = first(RLstatus),
+    females = sum(Weibchen + Arbeiterin),
+    males = sum(Männchen),
+    total_abundance = n(),
+    .groups = "drop"
+  )
+
+
+
+species_table <- sexes %>%
+  left_join(abundances, by = "bee_species") %>%
+  mutate(
+    sort_name = gsub(" cf\\.", "", bee_species)
+  ) %>%
+  arrange(sort_name, bee_species) %>%
+  select(-sort_name)
+
+
+
+species_table
+```
+
+```{r}
+gt_species <- species_table %>%
+  gt() %>%
+
+  tab_spanner(
+    label = "Control",
+    columns = c(
+      control_Aire,
+      control_Thiele,
+      control_Scheulte,
+      control_Schwarzbach
+    )
+  ) %>%
+
+  tab_spanner(
+    label = "Focal",
+    columns = c(
+      focal_Aire,
+      focal_Thiele,
+      focal_Scheulte,
+      focal_Schwarzbach
+    )
+  ) %>%
+
+  cols_label(
+    RLstatus = "RL",
+    bee_species = "Species",
+    control_Aire = "Aire",
+    control_Thiele = "Thiele",
+    control_Scheulte = "Scheulte",
+    control_Schwarzbach = "Schwarzbach",
+    focal_Aire = "Aire",
+    focal_Thiele = "Thiele",
+    focal_Scheulte = "Scheulte",
+    focal_Schwarzbach = "Schwarzbach",
+    females = "Females",
+    males = "Males",
+    total_abundance = "Total"
+  )
+
+gt_species
+
+gtsave(
+  gt_species,
+  filename = "../output/tables/bee_species_list.docx"
+)
+
+```
+
+
