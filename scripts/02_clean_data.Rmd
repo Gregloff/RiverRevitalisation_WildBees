@@ -10,14 +10,6 @@ library(tidyr)
 library(vegan)
 ```
 
-```{r}
-
-pkgs <- c("dplyr", "readr", "rprojroot", "tidyr", "vegan")
-
-knitr::write_bib(pkgs, file = "r-packages.bib")
-
-```
-
 ```{r Load data}
 # Compact helper function to read raw CSVs
 read_raw <- function(file) {
@@ -153,6 +145,9 @@ plant_data <- plant_data[, c("site", "region", "visit", "plotID",
 # PREP BEE DATA
 # remove extra plots (plots #13) and Wasps
 beedata <- beedata[!(beedata$plot == 13 | beedata$Gattung == "Wasp"), ]
+
+# remove "cf." from species names
+beedata <- beedata |> mutate(Art = gsub("^cf\\.\\s*", "", Art))
 
 # Combine genus and species into a single species name
 beedata <- beedata |>
@@ -320,7 +315,8 @@ bee_data <- bee_data |>
 
 
 
-13# Model data
+
+# Combine model data
 Create full dataset for modelling, each plot regarded separately
 ```{r bee model data prep: data_all prep}
 data_all <- merge(habplot_data, plant_data, by = "surveyID")
@@ -379,7 +375,7 @@ data_all_scaled <- data_all_scaled |>
          visit_ord = ordered(visit, levels = c("1","2","3","4","5")))
 ```
 
-# Save clean dataframes
+# Save clean survey-level dataframes
 ```{r}
 # Save flat datasets as CSV
 save_csv <- function(df, name) {
@@ -462,6 +458,12 @@ bee_plot <- bee_plot %>%
 ```
 
 ```{r merge habitat and plant vairables across visits per plot}
+# define mode function for patchiness
+mode_fun <- function(x) {
+  ux <- na.omit(unique(x))
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
 # aggregate habitat data
 hab_plot <- habplot_data %>%
   group_by(region, site, plotID) %>%
