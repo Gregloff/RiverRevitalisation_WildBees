@@ -1,5 +1,5 @@
 ---
-title: "08_patchiness"
+title: "08_plot_heterogeneity"
 output: html_document
 ---
 ```{r load packages}
@@ -35,9 +35,9 @@ recode_vars <- function(x) case_match(x,
   "bareground" ~ "Bare ground",
   "sand"       ~ "Sand",
   "soil"       ~ "Soil",
-  "herb"       ~ "Herb cover",
-  "woody"      ~ "Woody cover",
-  "vegheight"  ~ "Veg height",
+  "herb"       ~ "Herbaceous veg.",
+  "woody"      ~ "Woody veg.",
+  "vegheight"  ~ "Vegetation height",
   "sloped"     ~ "Sloped",
   "flat"       ~ "Flat",
   "steep"      ~ "Steep",
@@ -118,7 +118,7 @@ print(ef)
 ef_coords <- as.data.frame(scores(ef, display = "vectors")) * arrow_scale
 ef_coords$variable <- rownames(ef_coords)
 
-p_biplot +
+p_envfit <- p_biplot +
   geom_segment(
     data = ef_coords,
     aes(x = 0, y = 0, xend = PC1, yend = PC2),
@@ -132,7 +132,13 @@ p_biplot +
     colour = "black", size = 3.8, fontface = "bold",
     inherit.aes = FALSE
   ) +
-  labs(title = "PCA with Plot heterogeneity fitted as environmental vector (envfit)")
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid = element_blank(),
+    plot.title = element_blank()  # remove title cleanly
+  )
+
+p_envfit
 ```
 Nearly 47% of the variation in patchiness is explained by the position of plots in PCA space (PC1–PC2).
 In ecological multivariate analyses, this is a strong effect size, especially for a passive variable not used to build the PCA.
@@ -149,6 +155,20 @@ Aligned with sand, floral richness, woody elements, bare ground
 
 Patchiness is strongly and significantly aligned with the main multivariate habitat gradients, increasing toward plots characterized by higher structural complexity, floral richness, and substrate heterogeneity, and decreasing in homogeneous, herb‑dominated habitats.
 gpt
+
+```{r print PCA}
+
+tiff(
+  file.path("..", "output", "figures", "pca_envfit_600dpi.tiff"),
+  width = 4000, height = 2250,
+  res = 600,
+  compression = "lzw"
+)
+
+print(p_envfit)
+dev.off()
+
+```
 
 ```{r Correlation tests}
 # Spearman
