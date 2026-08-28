@@ -32,11 +32,11 @@ print(table(hab$patchiness))
 
 # Recode vairable names for simpler output interpretation
 recode_vars <- function(x) case_match(x,
-  "bareground" ~ "Bare ground",
+  "bareground" ~ "Bareground",
   "sand"       ~ "Sand",
   "soil"       ~ "Soil",
-  "herb"       ~ "Herbaceous veg.",
-  "woody"      ~ "Woody veg.",
+  "herb"       ~ "Herbaceous vegetation",
+  "woody"      ~ "Woody vegetation",
   "vegheight"  ~ "Vegetation height",
   "sloped"     ~ "Sloped",
   "flat"       ~ "Flat",
@@ -170,88 +170,3 @@ dev.off()
 
 ```
 
-```{r Correlation tests}
-# Spearman
-cor_results <- hab_vars %>%
-  summarise(across(everything(),
-                   ~ cor(.x, patchiness,
-                         method = "spearman",
-                         use    = "complete.obs"))) %>%
-  pivot_longer(everything(),
-               names_to  = "variable",
-               values_to = "spearman_rho") %>%
-  mutate(variable = recode_vars(variable)) %>%
-  arrange(desc(abs(spearman_rho)))
-
-print(cor_results)
-
-# Kruskal Wallis
-kw_results <- hab_vars %>%
-  summarise(across(everything(),
-                   ~ kruskal.test(.x,
-                                  g = as.factor(patchiness))$p.value)) %>%
-  pivot_longer(everything(),
-               names_to  = "variable",
-               values_to = "KW_pvalue") %>%
-  mutate(
-    sig      = case_when(
-      KW_pvalue < 0.001 ~ "***",
-      KW_pvalue < 0.01  ~ "**",
-      KW_pvalue < 0.05  ~ "*",
-      TRUE              ~ "ns"
-    ),
-    variable = recode_vars(variable)
-  ) %>%
-  arrange(KW_pvalue)
-
-print(kw_results)
-
-# Dunn Post-Hoc
-key_vars <- c("hill_q0", "bareground", "vegheight", "herb", "woody")
-
-for (v in key_vars) {
-  cat("\n── Dunn test:", recode_vars(v), "──\n")
-  dunn.test(hab_vars[[v]],
-            g      = as.factor(patchiness),
-            method = "bonferroni",
-            kw     = TRUE)
-}
-
-# Summary table
-summary_table <- left_join(cor_results, kw_results, by = "variable") %>%
-  arrange(desc(abs(spearman_rho)))
-
-print(summary_table)
-
-# Boxplots
-
-hab %>%
-  select(patchiness, all_of(key_vars)) %>%
-  pivot_longer(-patchiness,
-               names_to  = "variable",
-               values_to = "value") %>%
-  mutate(
-    patchiness = as.factor(patchiness),
-    variable   = recode_vars(variable)
-  ) %>%
-  ggplot(aes(x = patchiness, y = value, fill = patchiness)) +
-  geom_boxplot(alpha = 0.7, outlier.size = 1) +
-  scale_fill_manual(values = c("0" = "#d73027", "1" = "#fc8d59",
-                               "2" = "#91bfdb", "3" = "#4575b4")) +
-  facet_wrap(~variable, scales = "free_y") +
-  labs(x     = "Plot heterogeneity score",
-       y     = "Value",
-       title = "Habitat variables by plot heterogeneity score") +
-  theme_bw(base_size = 11) +
-  theme(legend.position = "none")
-```
-Spearman rank correlations revealed strong and directionally consistent associations between patchiness and several key habitat components (Table X). Patchiness increased with sand cover (ρ = 0.61), floral richness (ρ = 0.61), woody cover (ρ = 0.49), and bare ground availability (ρ = 0.47), while decreasing with herbaceous cover (ρ = −0.49) and homogeneous soil surfaces (ρ = −0.36). These relationships correspond closely to the ecological criteria used during field scoring, indicating that higher patchiness values consistently reflect increased structural and compositional heterogeneity. Variables only marginally related to patchiness (e.g. vegetation height, steepness) showed weaker correlations, while variables not central to the patchiness assessment (flat and sloped surfaces) were not significantly associated.
-
-Kruskal–Wallis tests demonstrated that most habitat variables differed significantly among patchiness classes (p < 0.001 for 8 out of 10 variables, except for sloped and flat), indicating that patchiness categories represent distinct habitat configurations rather than arbitrary or noisy groupings. The absence of significant differences for variables unrelated to the scoring protocol reinforces that patchiness captures targeted aspects of habitat structure rather than acting as a general surrogate for all environmental variation.
-
-Post‑hoc Dunn tests revealed that habitat variables responded to patchiness in distinct but ecologically interpretable ways. While floral richness increased monotonically across all patchiness classes, other variables exhibited threshold‑like patterns. Bare ground showed strong differentiation between the lowest and highest patchiness classes, with weaker contrasts at intermediate levels, indicating both entry and expansion thresholds. Herbaceous and woody cover displayed pronounced low‑end thresholds, with sharp separation between patchiness 0 and all higher classes, followed by saturation at higher patchiness levels. Vegetation height differed primarily at intermediate patchiness values, reflecting the emergence of vertical structural heterogeneity rather than a continuous gradient. These complementary response patterns indicate that patchiness integrates multiple habitat components that contribute differentially along the heterogeneity gradient.
-
-Taken together, these results demonstrate that patchiness is a reproducible, ecologically interpretable index that aligns with independently measured habitat characteristics in a predictable and structured manner. Its strong correspondence with variables explicitly targeted during field assessment, combined with its limited association with irrelevant variables, supports its construct validity. Patchiness therefore represents a meaningful summary of habitat heterogeneity and is appropriate for inclusion as an explanatory variable in subsequent statistical models.
-
-
-gpt
