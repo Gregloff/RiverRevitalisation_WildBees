@@ -16,18 +16,16 @@ library(glmmTMB)
 library(performance)
 ```
 
-Coverage‑based rarefaction (Chao et al. 2014, 2020) provides descriptive standardization, not inferential estimates, and its resulting diversity values do not follow the distributional assumptions required for GLMMs (e.g. Gotelli & Colwell 2001; Chao & Jost 2012). Rarefaction also collapses plot‑level replication, removes ecological variance, and prevents correct estimation of random effects.
-Because our sampling design includes spatial and hierarchical structure (multiple visits per plot; plots nested within sites; sites nested within regions), a GLMM using plot‑level richness/abundance with region and plotID as random effects is the statistically appropriate inferential framework.
 
 ```{r Load data}
 # Compact helper function to read raw CSVs
 bee_data <- read.csv(file.path("..", "data", "cleaned", "bee_data.csv"),
-           stringsAsFactors = FALSE,
-           check.names = FALSE)
+                     stringsAsFactors = FALSE,
+                     check.names = FALSE)
+
 ```
 
-```{r colorblind friendly approach}
-
+```{r define metadata and speceis columns}
 # Identify metadata and species columns
 meta_cols <- c(
   "surveyID", "plotID", "site", "region", "visit", "plot",
@@ -41,14 +39,13 @@ meta_cols <- c(
 )
 
 species_cols <- setdiff(names(bee_data), meta_cols)
-
 ```
 
 # Site-level rarefaction by region
 ```{r rarefy by site per region}
 # Aggregate all plots per site
-bee_site <- bee_data %>%
-  group_by(region, site) %>%
+bee_site <- bee_data |>
+  group_by(region, site) |>
   summarise(across(all_of(species_cols), sum), .groups = "drop")
 
 
@@ -59,7 +56,6 @@ inext_site <- setNames(
   }),
   paste(bee_site$region, bee_site$site, sep = "_")
 )
-
 
 # Run iNEXT for abundance data (q = 0 richness)
 out_site <- iNEXT(
@@ -75,54 +71,25 @@ out_site <- iNEXT(
 # Extract coverage-based rarefaction data
 df_site <- fortify(out_site, type = 3)
 
-
 # Recover region and site labels
-df_site <- df_site %>%
+df_site <- df_site |>
   separate(Assemblage, into = c("region", "site"), sep = "_")
 
-
-# Plot coverage-based rarefaction curves (SITE level)
-p_covraref_site <- ggplot(df_site,
-                          aes(x = x, y = y, color = site, fill = site)) +
-  geom_line(linewidth = 1.2) +
-  geom_ribbon(aes(ymin = y.lwr, ymax = y.upr),
-              alpha = 0.25, color = NA) +
-  facet_wrap(~ region) +
-  labs(
-    x = "Sample coverage",
-    y = "Estimated species richness",
-    title = "Coverage-based rarefaction by site",
-    color = "Site",
-    fill = "Site"
-  ) +
-  scale_color_manual(values = c("focal" = "#2C7FB8", "control" = "#D95F02")) +
-  scale_fill_manual(values = c("focal" = "#A6C1E0", "control" = "#F1B0AD")) +
-  theme_bw(base_size = 12) +
-  theme(
-    panel.grid = element_blank(),
-    plot.title = element_text(face = "bold")
-  )
-
-p_covraref_site
 ```
 
 ```{r plot coverage based rarefaction by site and region}
 # Extract transition points (Observed)
-transition_pts <- df_site %>%
+transition_pts <- df_site |>
   filter(Method == "Observed")
 
 # Plot
-p_covraref_site <- ggplot(df_site,
-                          aes(x = x, y = y, color = site, fill = site)) +
-  
-  # Lines with linetype mapping
+p_covraref_site <- ggplot(
+  df_site, 
+  aes(x = x, y = y, color = site, fill = site)) +
   geom_line(aes(linetype = Method), linewidth = 1.2) +
-  
-  # Confidence ribbon
   geom_ribbon(aes(ymin = y.lwr, ymax = y.upr),
               alpha = 0.25, color = NA) +
-  
-  # Transition point (Observed)
+    # Transition point (Observed)
   geom_point(
     data = transition_pts,
     aes(x = x, y = y),
@@ -132,11 +99,9 @@ p_covraref_site <- ggplot(df_site,
     color = "black",
     fill = "white"
   ) +
-  
-  # Facet per region
+    # Facet per region
   facet_wrap(~ region) +
-  
-  labs(
+    labs(
     x = "Sample coverage",
     y = "Estimated species richness",
     title = "Coverage-based rarefaction by site",
@@ -144,14 +109,12 @@ p_covraref_site <- ggplot(df_site,
     fill = "Site",
     linetype = "Sampling segment"
   ) +
-  
-  # Color scales
+    # Color scales
   scale_color_manual(values = c(
     "focal" = "#2C7FB8",
     "control" = "#D95F02"
   )) +
-  
-  scale_fill_manual(values = c(
+    scale_fill_manual(values = c(
     "focal" = "#A6C1E0",
     "control" = "#F1B0AD"
   )) +
@@ -183,20 +146,20 @@ p_covraref_site
 ```
 
 #Size-based rarefaction site scale per region
-```{r}
+```{r }
 df_site <- out_site$iNextEst$size_based
 
-df_site <- df_site %>%
+df_site <- df_site |>
   rename(
     x = m,
     y = qD,
     y.lwr = qD.LCL,
     y.upr = qD.UCL
-  ) %>%
+  ) |>
   separate(Assemblage, into = c("region", "site"), sep = "_")
 
 # Observed points
-transition_pts <- df_site %>%
+transition_pts <- df_site |>
   filter(Method == "Observed")
 
 # Plot
@@ -272,7 +235,8 @@ print(p_sizeraref_site)
 dev.off()
 ```
 
-# Pooled site-level rarefaction
+# (Pooled site-level rarefaction)
+Not included in publication
 ```{r rarefy pooled coverage based rarefaction by site}
 # Pool to two assemblages: focal and control
 bee_focal_pool   <- colSums(bee_data[bee_data$site == "focal", species_cols])
@@ -291,15 +255,15 @@ out_pooled <- iNEXT(
 )
 ```
 
-# (Pooled size-based rarefaction by site)
+## Pooled size-based rarefaction by site
 ```{r size and coverage-based rarefaction pooled focal vs control}
 # Extract size-based and coverage-based data
 df_pooled_size     <- fortify(out_pooled, type = 1)
 df_pooled_coverage <- fortify(out_pooled, type = 3)
 
 # Transition points
-transition_size     <- df_pooled_size     %>% filter(Method == "Observed")
-transition_coverage <- df_pooled_coverage %>% filter(Method == "Observed")
+transition_size     <- df_pooled_size     |> filter(Method == "Observed")
+transition_coverage <- df_pooled_coverage |> filter(Method == "Observed")
 
 # SIZE-BASED PLOT
 p_raref_size <- ggplot(df_pooled_size,
@@ -368,7 +332,6 @@ p_raref_coverage
 ```
 
 
-
 # Plot-level rarefaction
 ```{r rarefaction}
 # Identify metadata and species columns
@@ -386,8 +349,8 @@ meta_cols <- c(
 species_cols <- setdiff(names(bee_data), meta_cols)
 
 # Aggregate visits within each plot
-bee_plot <- bee_data %>%
-  group_by(region, site, plotID) %>%
+bee_plot <- bee_data |>
+  group_by(region, site, plotID) |>
   summarise(across(all_of(species_cols), sum), .groups = "drop")
 
 # Prepare iNEXT input list (per plot)
@@ -422,8 +385,8 @@ out_inext_q1 <- iNEXT(
 ```{r coverage based rarefaction plot scale (visits merged)}
 df_plot <- fortify(out_inext_q0, type = 3)
 
-df_cov_max <- df_plot %>%
-  group_by(Assemblage) %>%
+df_cov_max <- df_plot |>
+  group_by(Assemblage) |>
   summarise(max_coverage = max(x), .groups = "drop")
 
 summary(df_cov_max$max_coverage)
@@ -455,7 +418,7 @@ ggiNEXT(out_inext_q0, type = 3) +
 
 
 # use estimateD (exact interpolation)
-df_ri_rarefied <- estimateD(
+rarefied_cov_rich <- estimateD(
   inext_list,
   q = 0,
   base = "coverage",
@@ -463,10 +426,10 @@ df_ri_rarefied <- estimateD(
 )
 
 # Prepare dataset for modelling
-df_ri_rarefied <- df_ri_rarefied %>%
+rarefied_cov_rich <- rarefied_cov_rich |>
   separate(Assemblage,
            into = c("region", "site", "plotID"),
-           sep = "_") %>%
+           sep = "_") |>
   rename(
     richness = qD,
     richness_lwr = qD.LCL,
@@ -474,92 +437,13 @@ df_ri_rarefied <- df_ri_rarefied %>%
     coverage = SC
   )
 ```
-This shows that coverage is very high in most plots (median = 0.999) - plots are well-sampled - threshold was selected based on histogram, and model run with these values. 
-
-
-```{r Coverage-based rarefaction model}
-RRIcov_site <- glmmTMB(
-  richness ~ site + (1 | region),
-  data = df_ri_rarefied,
-  family = Gamma(link = "log")
-)
-
-summary(RRIcov_site)
-
-check_model(RRIcov_site)
-
-# Predicted values
-pred_cov_rich <- emmeans(RRIcov_site, ~ site, type = "response")
-contrast(pred_cov_rich, "revpairwise")
-r2(RRIcov_site)
-```
-
-Focal plots supported approximately higher bee species richness comapred to control plots. Increasing the coverage threshold led to progressively stronger differences, with focal plots supporting 2.39 times and 2.52 times higher richness at coverage levels of 0.85 and 0.90, respectively. This consistent increase indicates that differences between site types are particularly pronounced in the rarer components of the community.
-
-
-2.39 higher richness in focla vs control site
-Effect ≈ 2.39× higher richness
-~ +139% increase -> multiplicative effect
-
-```{r plot predicted coverage-based rarefaction }
-# Predicted marginal means
-pred_site_rrich_cov <- ggpredict(RRIcov_site, terms = "site", type = "fixed")
-
-# ensure plotting order
-pred_site_rrich_cov$x <- factor(pred_site_rrich_cov$x, levels = c("control", "focal"))
-df_ri_rarefied$site <- factor(df_ri_rarefied$site, levels = c("control", "focal"))
-
-# Color palette
-site_cols <- list(
-  "focal" = "#2C7FB8",
-  "control" = "#D95F09",
-  "focal_light" = "cadetblue3",
-  "control_light" = "#D95"
-)
-
-# Plot
-p_rrich_cov <- ggplot() +
-  geom_jitter(
-    data = df_ri_rarefied,
-    aes(x = site, y = richness, colour = site),
-    width = 0.12, alpha = 0.15, size = 1.6, show.legend = FALSE
-  ) +
-  geom_point(
-    data = pred_site_rrich_cov,
-    aes(x = x, y = predicted, colour = x),
-    size = 3.8, show.legend = FALSE
-  ) +
-  geom_errorbar(
-    data = pred_site_rrich_cov,
-    aes(x = x, ymin = conf.low, ymax = conf.high, colour = x),
-    width = 0.10, linewidth = 1, show.legend = FALSE
-  ) +
-  scale_colour_manual(values = site_cols) +
-  scale_x_discrete(labels = c("control" = "Control", "focal" = "Focal")) +
-  labs(
-    x = NULL,
-    y = "Bee richness \n (coverage-standardised)",
-    title = "Predicted Bee Richness per Plot by Site (coverage-based rarefaction)",
-    subtitle = "Points = model-estimated means ± 95% CI \nJittered points = standardised richness at equal coverage"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor = element_blank(),
-    plot.title = element_text(face = "bold", size = 15),
-    plot.subtitle = element_text(size = 11),
-    axis.title.y = element_text(margin = margin(r = 8))
-  )
-
-p_rrich_cov
-```
 
 ## Hill q1
 ```{r Coverage-based rarefaction plot-scale (visits merged) - Hill q1}
 df_plot_q1 <- fortify(out_inext_q1, type = 3)
 
-df_cov_max_q1 <- df_plot_q1 %>%
-  group_by(Assemblage) %>%
+df_cov_max_q1 <- df_plot_q1 |>
+  group_by(Assemblage) |>
   summarise(max_coverage = max(x), .groups = "drop")
 
 summary(df_cov_max_q1$max_coverage)
@@ -590,7 +474,7 @@ ggiNEXT(out_inext_q1, type = 3) +
   theme_minimal()
 
 # use estimateD (exact interpolation)
-df_q1_rarefied <- estimateD(
+rarefied_cov_q1 <- estimateD(
   inext_list,
   q = 1,
   datatype = "abundance",
@@ -599,10 +483,10 @@ df_q1_rarefied <- estimateD(
 )
 
 # Prepare dataset for modelling
-df_q1_rarefied <- df_q1_rarefied %>%
+rarefied_cov_q1 <- rarefied_cov_q1 |>
   separate(Assemblage,
            into = c("region", "site", "plotID"),
-           sep = "_") %>%
+           sep = "_") |>
   rename(
     hill_q1 = qD,
     hill_q1_lwr = qD.LCL,
@@ -611,213 +495,14 @@ df_q1_rarefied <- df_q1_rarefied %>%
   )
 
 # check how many plots you KEEP now
-length(unique(df_q1_rarefied$plotID))
-```
-```{r Coverage-based rarefaction model (Hill q1)}
-RQ1cov_site <- glmmTMB(
-  hill_q1 ~ site + (1 | region),
-  data = df_q1_rarefied,
-  family = gaussian()
-)
-
-summary(RQ1cov_site)
-
-check_model(RQ1cov_site)
-
-# Predicted values
-pred_cov_q1 <- emmeans(RQ1cov_site, ~ site, type = "response")
-contrast(pred_cov_q1, "revpairwise")
-```
-
-```{r Plot predicted Hill q1 (coverage-based rarefaction)}
-# Predicted marginal means
-pred_site_q1_cov <- ggpredict(RQ1cov_site, terms = "site", type = "fixed")
-
-# ensure plotting order
-pred_site_q1_cov$x <- factor(pred_site_q1_cov$x, levels = c("control", "focal"))
-df_q1_rarefied$site <- factor(df_q1_rarefied$site, levels = c("control", "focal"))
-
-# Color palette
-site_cols <- list(
-  "focal" = "#2C7FB8",
-  "control" = "#D95F09",
-  "focal_light" = "cadetblue3",
-  "control_light" = "#D95"
-)
-
-# Plot
-p_q1_cov <- ggplot() +
-  geom_jitter(
-    data = df_q1_rarefied,
-    aes(x = site, y = hill_q1, colour = site),
-    width = 0.12, alpha = 0.15, size = 1.6, show.legend = FALSE
-  ) +
-  geom_point(
-    data = pred_site_q1_cov,
-    aes(x = x, y = predicted, colour = x),
-    size = 3.8, show.legend = FALSE
-  ) +
-  geom_errorbar(
-    data = pred_site_q1_cov,
-    aes(x = x, ymin = conf.low, ymax = conf.high, colour = x),
-    width = 0.10, linewidth = 1, show.legend = FALSE
-  ) +
-  scale_colour_manual(values = site_cols) +
-  scale_x_discrete(labels = c("control" = "Control", "focal" = "Focal")) +
-  labs(
-    x = NULL,
-    y = "Bee Shannon diversity \n (coverage-standardised)",
-    title = "Predicted Bee Diversity per Plot by Site (coverage-based rarefaction, q = 1)",
-    subtitle = "Points = model-estimated means ± 95% CI \nJittered points = standardised Hill q1 at equal coverage"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor = element_blank(),
-    plot.title = element_text(face = "bold", size = 15),
-    plot.subtitle = element_text(size = 11),
-    axis.title.y = element_text(margin = margin(r = 8))
-  )
-
-p_q1_cov
-```
-
-## Model predictions patchwork plot
-```{r model predictions patchwork plor coverage based rarefaction}
-# Shared publication theme
-theme_pub <- theme_minimal(base_size = 16) +
-  theme(
-    axis.text = element_text(size = 16),
-    axis.title = element_text(size = 18),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(), 
-    panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)
-  )
-# clean plots
-p_rrich_cov_clean <- p_rrich_cov +
-  labs(title = NULL, subtitle = NULL) +
-  theme_pub
-
-p_q1_cov_clean <- p_q1_cov +
-  labs(title = NULL, subtitle = NULL) +
-  theme_pub
-
-# Combine plots
-p_cov_combined <- p_rrich_cov_clean + p_q1_cov_clean +
-  patchwork::plot_layout(ncol = 2) +
-  patchwork::plot_annotation(
-    tag_levels = "a",
-    tag_prefix = "(",
-    tag_suffix = ")"
-  )
-
-p_cov_combined
-
-# save tiff
-tiff(
-  file.path("..", "output", "figures", "preds_bee_covgrar_600dpi.tiff"),
-  width = 5000, height = 2500, res = 600, compression = "lzw"
-)
-
-print(p_cov_combined)
-
-dev.off()
-```
-## Model outputs table
-```{r Model ouputs table coverage based rarefaction}
-# helper function
-extract_site_table_rarefied <- function(model, response_name, effect_type) {
-  
-  em <- emmeans(model, ~ site, type = "response")
-  em_df <- as.data.frame(em)
-  
-  mean_col  <- if ("response" %in% names(em_df)) "response" else "emmean"
-  lower_col <- if ("asymp.LCL" %in% names(em_df)) "asymp.LCL" else "lower.CL"
-  upper_col <- if ("asymp.UCL" %in% names(em_df)) "asymp.UCL" else "upper.CL"
-  
-  means_wide <- em_df %>%
-    mutate(site = as.character(site)) %>%
-    transmute(
-      site,
-      mean = .data[[mean_col]],
-      lower = .data[[lower_col]],
-      upper = .data[[upper_col]]
-    ) %>%
-    mutate(mean_ci = sprintf("%.2f (%.2f\u2013%.2f)", mean, lower, upper)) %>%
-    select(site, mean_ci) %>%
-    pivot_wider(names_from = site, values_from = mean_ci)
-  
-  # raw means (unformatted), needed to compute % change for additive-scale models
-  control_mean <- em_df[[mean_col]][em_df$site == "control"]
-  focal_mean   <- em_df[[mean_col]][em_df$site == "focal"]
-  pct_change   <- (focal_mean - control_mean) / control_mean * 100
-  
-  contr <- contrast(em, "revpairwise") %>%
-    summary(infer = TRUE, type = "response") %>%
-    as.data.frame() %>%
-    rename(
-      lower = any_of(c("asymp.LCL", "lower.CL")),
-      upper = any_of(c("asymp.UCL", "upper.CL"))
-    )
-  
-  if (effect_type == "ratio") {
-    contr_out <- contr %>%
-      transmute(
-        effect = sprintf("%.2f\u00d7 (%.2f\u2013%.2f)", ratio, lower, upper),
-        p_value = ifelse(p.value < 0.001, "< 0.001", sprintf("%.3f", p.value))
-      )
-  } else {
-    contr_out <- contr %>%
-      transmute(
-        effect = sprintf("+%.2f (%.2f\u2013%.2f); +%.0f%%", estimate, lower, upper, pct_change),
-        p_value = ifelse(p.value < 0.001, "< 0.001", sprintf("%.3f", p.value))
-      )
-  }
-  
-  # R2 extraction
-  r2_vals <- tryCatch(r2(model), error = function(e) NULL)
-  r2_marg <- if (!is.null(r2_vals$R2_marginal)) sprintf("%.3f", r2_vals$R2_marginal) else NA
-  r2_cond <- if (!is.null(r2_vals$R2_conditional)) sprintf("%.3f", r2_vals$R2_conditional) else NA
-  
-  bind_cols(means_wide, contr_out) %>%
-    mutate(
-      response = sprintf("%s (R\u00b2m = %s, R\u00b2c = %s)", response_name, r2_marg, r2_cond),
-      .before = everything()
-    )
-}
-
-tab_cov_rich <- extract_site_table_rarefied(RRIcov_site, "Richness", "ratio")
-tab_cov_q1   <- extract_site_table_rarefied(RQ1cov_site, "Hill q1", "additive")
-
-table_cov_rarefied <- bind_rows(tab_cov_rich, tab_cov_q1)
-
-gt_table_cov <- table_cov_rarefied %>%
-  gt() %>%
-  cols_label(
-    response = "Response",
-    control  = "Control (mean \u00b1 95% CI)",
-    focal    = "Focal (mean \u00b1 95% CI)",
-    effect   = "Focal vs Control Difference (\u00b1 95% CI)",
-    p_value  = "P-value"
-  ) %>%
-  cols_align(
-    align = "center",
-    columns = everything()
-  )
-
-gt_table_cov
-
-gtsave(
-  gt_table_cov,
-  filename = "../output/tables/cov_rarefaction_effects.docx"
-)
+length(unique(rarefied_cov_q1$plotID))
 ```
 
 # Size-based rarefaction plot scale (visits merged)
 ## Richness
 ```{r Size-based rarefaction plot scale (visits merged)}
 # Add total abundance per plot
-bee_plot_n <- bee_plot %>%
+bee_plot_n <- bee_plot |>
   mutate(total_abundance = rowSums(across(all_of(species_cols))))
 
 summary(bee_plot_n$total_abundance)
@@ -838,7 +523,7 @@ target_n <- floor(quantile(bee_plot_n$total_abundance, 0.3))
 target_n
 
 # Exact size-based rarefaction using estimateD - richness
-df_size_rarefied <- estimateD(
+rarefied_size_rich <- estimateD(
   inext_list,
   q = 0,
   datatype = "abundance",
@@ -847,8 +532,8 @@ df_size_rarefied <- estimateD(
 )
 
 # Add metadata
-df_size_rarefied <- df_size_rarefied %>%
-  separate(Assemblage, into = c("region", "site", "plotID"), sep = "_") %>%
+rarefied_size_rich <- rarefied_size_rich |>
+  separate(Assemblage, into = c("region", "site", "plotID"), sep = "_") |>
   rename(
     sample_size = m,
     richness = qD,
@@ -858,84 +543,9 @@ df_size_rarefied <- df_size_rarefied %>%
 ```
 
 
-```{r size-based rarefaction model}
-RRIsiz_site <- glmmTMB(
-  richness ~ site + (1 | region),
-  data = df_size_rarefied,
-  family = gaussian()
-)
-
-summary(RRIsiz_site)
-
-
-check_model(RRIsiz_site)
-
-# Predicted values
-pred_siz_rich <- emmeans(RRIsiz_site, ~ site, type = "response")
-contrast(pred_siz_rich, "revpairwise")
-```
-As this is size-based, the estimate of 2.08 of focal is the absolute difference in species expected when sampling target_n = 11 individuals in a plot - focal sites have 2.05 more species
-Effect = +2.06 species
-absolute difference
-
-```{r plot predicted size-based rarefaction }
-
-# Predicted marginal means
-pred_site_rrich_size <- ggpredict(RRIsiz_site, terms = "site", type = "fixed")
-
-# ensure plotting order
-pred_site_rrich_size$x <- factor(pred_site_rrich_size$x, levels = c("control", "focal"))
-df_size_rarefied$site <- factor(df_size_rarefied$site, levels = c("control", "focal"))
-
-# Color palette
-site_cols <- list(
-  "focal" = "#2C7FB8",
-  "control" = "#D95F09",
-  "focal_light" = "cadetblue3",
-  "control_light" = "#D95"
-)
-
-# Plot
-p_rrich_size <- ggplot() +
-  geom_jitter(
-    data = df_size_rarefied,
-    aes(x = site, y = richness, colour = site),
-    width = 0.12, alpha = 0.15, size = 1.6, show.legend = FALSE
-  ) +
-  geom_point(
-    data = pred_site_rrich_size,
-    aes(x = x, y = predicted, colour = x),
-    size = 3.8, show.legend = FALSE
-  ) +
-  geom_errorbar(
-    data = pred_site_rrich_size,
-    aes(x = x, ymin = conf.low, ymax = conf.high, colour = x),
-    width = 0.10, linewidth = 1, show.legend = FALSE
-  ) +
-  scale_colour_manual(values = site_cols) +
-  scale_x_discrete(labels = c("control" = "Control", "focal" = "Focal")) +
-  labs(
-    x = NULL,
-    y = "Bee richness \n (size-standardised)",
-    title = "Predicted Bee Richness per Plot by Site (size-based rarefaction)",
-    subtitle = "Points = model-estimated means ± 95% CI \nJittered points = rarefied plot values"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor = element_blank(),
-    plot.title = element_text(face = "bold", size = 15),
-    plot.subtitle = element_text(size = 11),
-    axis.title.y = element_text(margin = margin(r = 8))
-  )
-
-p_rrich_size
-```
-
-## Hill q1
 ```{r Size-based rarefaction (Hill q1)}
 # Exact size-based rarefaction using estimateD
-df_size_q1_rarefied <- estimateD(
+rarefied_size_q1 <- estimateD(
   inext_list,
   q = 1,
   datatype = "abundance",
@@ -944,8 +554,8 @@ df_size_q1_rarefied <- estimateD(
 )
 
 # Add metadata
-df_size_q1_rarefied <- df_size_q1_rarefied %>%
-  separate(Assemblage, into = c("region", "site", "plotID"), sep = "_") %>%
+rarefied_size_q1 <- rarefied_size_q1 |>
+  separate(Assemblage, into = c("region", "site", "plotID"), sep = "_") |>
   rename(
     sample_size = m,
     hill_q1 = qD,
@@ -954,257 +564,46 @@ df_size_q1_rarefied <- df_size_q1_rarefied %>%
   )
 
 # Check number of plots retained
-length(unique(df_size_q1_rarefied$plotID))
+length(unique(rarefied_size_q1$plotID))
 ```
 
-```{r Size-based rarefaction model (Hill q1)}
-RRIsiz_q1_site <- glmmTMB(
-  hill_q1 ~ site + (1 | region),
-  data = df_size_q1_rarefied,
-  family = gaussian()
-)
+# Save rarefied data
+```{r Generate combined datasets}
+# load base data
+data_plot_scaled <- readRDS(file.path(
+  "..", "data", "cleaned", "data_plot_scaled.rds"))
 
-summary(RRIsiz_q1_site)
+# create coverage-based rarefaction dataset (richness + hill q1)
+data_model_cov <- data_plot_scaled |>
+  left_join(
+    rarefied_cov_rich |>
+      select(region, site, plotID, richness_rarefied_cov = richness),
+    by = c("region", "site", "plotID")
+  ) |>
+  left_join(
+    rarefied_cov_q1 |>
+      select(region, site, plotID, hill_q1_rarefied_cov = hill_q1),
+    by = c("region", "site", "plotID")
+  ) |>
+  filter(!is.na(richness_rarefied_cov) | !is.na(hill_q1_rarefied_cov))
 
-check_model(RRIsiz_q1_site)
-
-# Predicted values
-pred_siz_q1 <- emmeans(RRIsiz_q1_site, ~ site, type = "response")
-contrast(pred_siz_rich, "revpairwise")
+# create size-based rarefaction dataset (richness + hill q1)
+data_model_size <- data_plot_scaled |>
+  left_join(
+    rarefied_size_rich |>
+      select(region, site, plotID, richness_rarefied_size = richness),
+    by = c("region", "site", "plotID")
+  ) |>
+  left_join(
+    rarefied_size_q1 |>
+      select(region, site, plotID, hill_q1_rarefied_size = hill_q1),
+    by = c("region", "site", "plotID")
+  ) |>
+  filter(!is.na(richness_rarefied_size) | !is.na(hill_q1_rarefied_size))
 ```
 
-```{r Plot predicted size-based rarefaction (Hill q1)}
-# Predicted marginal means
-pred_site_q1_size <- ggpredict(RRIsiz_q1_site, terms = "site", type = "fixed")
-
-# ensure plotting order
-pred_site_q1_size$x <- factor(pred_site_q1_size$x, levels = c("control", "focal"))
-df_size_q1_rarefied$site <- factor(df_size_q1_rarefied$site, levels = c("control", "focal"))
-
-# Plot
-p_q1_size <- ggplot() +
-  geom_jitter(
-    data = df_size_q1_rarefied,
-    aes(x = site, y = hill_q1, colour = site),
-    width = 0.12, alpha = 0.15, size = 1.6, show.legend = FALSE
-  ) +
-  geom_point(
-    data = pred_site_q1_size,
-    aes(x = x, y = predicted, colour = x),
-    size = 3.8, show.legend = FALSE
-  ) +
-  geom_errorbar(
-    data = pred_site_q1_size,
-    aes(x = x, ymin = conf.low, ymax = conf.high, colour = x),
-    width = 0.10, linewidth = 1, show.legend = FALSE
-  ) +
-  scale_colour_manual(values = site_cols) +
-  scale_x_discrete(labels = c("control" = "Control", "focal" = "Focal")) +
-  labs(
-    x = NULL,
-    y = "Bee Shannon diversity \n (size-standardised)",
-    title = "Predicted Bee Diversity per Plot by Site (size-based rarefaction)",
-    subtitle = "Points = model-estimated means ± 95% CI \nJittered points = rarefied plot values"
-  ) +
-  theme_minimal(base_size = 13) +
-  theme(
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor = element_blank(),
-    plot.title = element_text(face = "bold", size = 15),
-    plot.subtitle = element_text(size = 11),
-    axis.title.y = element_text(margin = margin(r = 8))
-  )
-
-p_q1_size
+```{r export datasets}
+saveRDS(data_model_cov, file = file.path("..","data","cleaned","data_model_cov.rds"))
+saveRDS(data_model_size, file = file.path("..","data","cleaned","data_model_size.rds"))
 ```
 
-## Model predictions patchwork plot
-```{r model predictions patchwork plos size based rarefaction}
-# Shared publication theme
-theme_pub <- theme_minimal(base_size = 16) +
-  theme(
-    axis.text = element_text(size = 16),
-    axis.title = element_text(size = 18),
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(), 
-    panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)
-  )
-
-# clean plots
-p_rrich_size_clean <- p_rrich_size +
-  labs(title = NULL, subtitle = NULL) +
-  theme_pub
-
-p_q1_size_clean <- p_q1_size +
-  labs(title = NULL, subtitle = NULL) +
-  theme_pub
-
-# combine plots
-p_size_combined <- p_rrich_size_clean + p_q1_size_clean +
-  patchwork::plot_layout(ncol = 2) +
-  patchwork::plot_annotation(
-    tag_levels = "a",
-    tag_prefix = "(",
-    tag_suffix = ")"
-  )
-
-p_size_combined
-
-# save tiff
-tiff(
-  file.path("..", "output", "figures", "preds_bee_sizerar_600dpi.tiff"),
-  width = 5000, height = 2500, res = 600, compression = "lzw"
-)
-print(p_size_combined)
-dev.off()
-```
-
-## Model outputs table
-```{r Model outputs table size-based rarefation}
-# helper function
-extract_site_table_rarefied <- function(model, response_name, effect_type) {
-  
-  em <- emmeans(model, ~ site)
-  em_df <- as.data.frame(em)
-  
-  lower_col <- if ("asymp.LCL" %in% names(em_df)) "asymp.LCL" else "lower.CL"
-  upper_col <- if ("asymp.UCL" %in% names(em_df)) "asymp.UCL" else "upper.CL"
-  
-  means_wide <- em_df %>%
-    mutate(site = as.character(site)) %>%
-    transmute(
-      site,
-      mean = emmean,
-      lower = .data[[lower_col]],
-      upper = .data[[upper_col]]
-    ) %>%
-    mutate(
-      mean_ci = sprintf(
-        "%.2f (%.2f–%.2f)",
-        mean,
-        lower,
-        upper
-      )
-    ) %>%
-    select(site, mean_ci) %>%
-    pivot_wider(
-      names_from = site,
-      values_from = mean_ci
-    )
-  
-  # percentage increase
-  control_mean <- em_df$emmean[em_df$site == "control"]
-  focal_mean   <- em_df$emmean[em_df$site == "focal"]
-  pct_change   <- (focal_mean - control_mean) / control_mean * 100
-  
-  if (effect_type == "ratio") {
-    
-    contr <- contrast(
-      em,
-      "revpairwise"
-    ) %>%
-      summary(
-        infer = TRUE,
-        type = "response"
-      ) %>%
-      as.data.frame()
-    
-    contr <- contr %>%
-      rename(
-        lower = any_of(c("asymp.LCL", "lower.CL")),
-        upper = any_of(c("asymp.UCL", "upper.CL"))
-      )
-    
-    contr_out <- contr %>%
-      transmute(
-        effect = sprintf(
-          "%.2f× (%.2f–%.2f)",
-          ratio,
-          lower,
-          upper
-        ),
-        p_value = ifelse(
-          p.value < 0.001,
-          "< 0.001",
-          sprintf("%.3f", p.value)
-        )
-      )
-    
-  } else {
-    
-    contr <- pairs(em) %>%
-      summary(infer = TRUE) %>%
-      as.data.frame()
-    
-    contr_out <- contr %>%
-      transmute(
-        effect = sprintf(
-          "+%.2f (%.2f–%.2f); +%.0f%%",
-          -estimate,
-          -upper.CL,
-          -lower.CL,
-          pct_change
-        ),
-        p_value = ifelse(
-          p.value < 0.001,
-          "< 0.001",
-          sprintf("%.3f", p.value)
-        )
-      )
-  }
-  
-  # R²
-  r2_vals <- tryCatch(
-    performance::r2(model),
-    error = function(e) NULL
-  )
-  
-  r2_marg <- if (!is.null(r2_vals$R2_marginal))
-    sprintf("%.3f", r2_vals$R2_marginal)
-  else
-    NA
-  
-  r2_cond <- if (!is.null(r2_vals$R2_conditional))
-    sprintf("%.3f", r2_vals$R2_conditional)
-  else
-    NA
-  
-  bind_cols(
-    means_wide,
-    contr_out
-  ) %>%
-    mutate(
-      response = sprintf(
-        "%s (R²m = %s, R²c = %s)",
-        response_name,
-        r2_marg,
-        r2_cond
-      ),
-      .before = everything()
-    )
-}
-
-tab_size_rich <- extract_site_table_rarefied(RRIsiz_site, "Richness", "absolute")
-tab_size_q1   <- extract_site_table_rarefied(RRIsiz_q1_site, "Hill q1", "absolute")
-
-table_size_rarefied <- bind_rows(tab_size_rich, tab_size_q1)
-
-gt_table_size <- table_size_rarefied %>%
-  gt() %>%
-  cols_label(
-    response = "Response",
-    control  = "Control (mean ± 95% CI)",
-    focal    = "Focal (mean ± 95% CI)",
-    effect   = "Focal vs Control Difference (± 95% CI)",
-    p_value  = "P-value"
-  ) %>%
-  cols_align(
-    align = "center",
-    everything()
-  )
-
-gtsave(
-  gt_table_size,
-  filename = "../output/tables/size_rarefaction_effects.docx"
-)
-```

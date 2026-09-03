@@ -1,6 +1,6 @@
 ---
 title: "05_site_unimodel"
-output: word_document
+author: Gregory B. Egloff
 ---
 
 ```{r Load packages}
@@ -18,29 +18,13 @@ library(tidyverse)
 ```
 
 
+# Survey-level data (unpooled across visits)
 ```{r Load data}
 data_all_scaled <- readRDS(file.path("..", "data", "cleaned", "data_all_scaled.rds"))
 ```
 
-A random intercept for region.
-Bee richness varies among regions.
-Each region gets its own intercept—i.e., its baseline bee richness level can be higher or lower than the global mean.
-You assume that observations within a region are correlated.
-
-A random intercept AND random slope for visit, grouped by plot.
-This means:
-Each plot has its own baseline bee richness (random intercept).
-The effect of visit (e.g., sampling round, date, etc.) varies among plots (random slope).
-So each plot has:
-its own starting point (intercept),
-its own trend across visits (slope),
-and usually a correlation between the intercept and the slope is also estimated (unless you specify ||).
-
-gpt
-
-
-# Richness
-```{r fit richness model on nbinom2, eval = FALSE}
+## Richness
+```{r fit richness model on nbinom2}
 nb2_rich <- glmmTMB(
   bee_richness ~ site + (1 | region) + (1 | plotID),
   family = nbinom2,
@@ -57,7 +41,7 @@ testZeroInflation(nb2_rich)
 check_model(nb2_rich)
 ```
 
-```{r fit richness model on nbinom1, eval = FALSE}
+```{r fit richness model on nbinom1}
 nb1_rich <- glmmTMB(
   bee_richness ~ site + (1 | region) + (1 | plotID),
   family = nbinom1,
@@ -73,11 +57,6 @@ testZeroInflation(nb1_rich)
 
 check_model(nb1_rich)
 ```
-
-
-To analyse the effect of site on bee richness, we fitted generalized linear mixed models including site as a fixed effect and plot identity as a random intercept to account for repeated sampling. Negative binomial models with alternative variance–mean relationships (nbinom1 and nbinom2) were compared using identical fixed‑ and random‑effects structures. For this model, the nbinom1 parameterisation provided a better fit, as indicated by a lower AIC and comparable or improved residual diagnostics. The nbinom1 model showed no evidence of over‑ or underdispersion, zero inflation, or residual structure based on DHARMa diagnostics, and parameter estimates were stable and biologically interpretable. Given the simpler random‑effects structure and approximately linear scaling of variance with the mean, the nbinom1 family was retained for inference.
-gpt
-
 
 ```{r richness site model}
 RI_site <- glmmTMB(
@@ -163,19 +142,8 @@ p_rich <- ggplot() +
 p_rich
 ```
 
-```{r print richness plot to tiff, eval = FALSE}
-tiff(
-  file.path("..", "output", "figures", "pred_bee_ri_site_600dpi.tiff"),
-  width = 3000, height = 2250, res = 600, compression = "lzw"
-)
-
-print(p_rich)
-dev.off()
-```
-
-
-# Abundance
-```{r fit abundance model on nbinom2, eval = FALSE}
+## Abundance
+```{r fit abundance model on nbinom2}
 nb2_abun <- glmmTMB(
   bee_abundance ~ site + (1 | region) + (1 | plotID),
   family = nbinom2,
@@ -192,7 +160,7 @@ testZeroInflation(nb2_abun)
 check_model(nb2_abun)
 ```
 
-```{r fit abundance model on nbinom1, eval = FALSE}
+```{r fit abundance model on nbinom1}
 nb1_abun <- glmmTMB(
   bee_abundance ~ site + (1 | region) + (1 | plotID),
   family = nbinom1,
@@ -293,21 +261,7 @@ p_abun <- ggplot() +
 p_abun
 ```
 
-```{r print abundance plot to tiff, eval = FALSE}
-tiff(
-  file.path("..", "output", "figures", "pred_bee_ab_site_600dpi.tiff"),
-  width = 3000, height = 2250, res = 600, compression = "lzw"
-)
-
-print(p_abun)
-dev.off()
-```
-
-# Hill q1
-```{r, eval = FALSE}
-hist(data_all_scaled$bee_hill_q1)
-```
-
+## Hill q1
 ```{r Hillq1 site model}
 Q1_site <- glmmTMB(log(bee_hill_q1) ~ site + (1 | region) + (1  | plotID),
         family = gaussian(),
@@ -318,8 +272,6 @@ summary(Q1_site)
 # res_Q1 <- simulateResiduals(Q1_site) takes too long
 check_model(Q1_site)
 ```
-Residual diagnostics indicated minor deviations from uniformity associated with differences in residual variance between site types. However, dispersion, outlier, and convergence diagnostics showed no evidence of model misspecification, and parameter estimates were stable. These patterns are consistent with strong mean differences under a Gamma error structure and do not affect inference.
-gpt
 
 ```{r Hillq1 site model predicted values}
 pred_q1 <- emmeans(Q1_site, ~ site, type = "response")
@@ -387,17 +339,7 @@ p_q1
 ```
 
 
-
-```{r print q1 plot to tiff, eval = FALSE}
-tiff(
-  file.path("..", "output", "figures", "pred_bee_q1_site_600dpi.tiff"),
-  width = 3000, height = 2250, res = 600, compression = "lzw"
-)
-
-print(p_q1)
-dev.off()
-```
-## Model predictions patchwork plot
+### Model predictions patchwork plot
 ```{r Model predictions patchwork plot}
 # Shared publication theme
 theme_pub <- theme_minimal(base_size = 16) +
@@ -445,7 +387,17 @@ print(p_combined)
 dev.off()
 ```
 
-## Model output tables
+```{r print prediction patchwork plot}
+# save tiff
+tiff(
+  file.path("..", "output", "figures", "Figure_E1.tiff"),
+  width = 7500, height = 2500, res = 600, compression = "lzw"
+)
+print(p_combined)
+dev.off()
+```
+
+### Model output tables
 ```{r model output table univariate models with R2 values}
 extract_site_table <- function(model, response_name) {
   
@@ -555,312 +507,24 @@ gt_table_univsite <- table_univsite %>%
 gtsave(gt_table_univsite, filename = "../output/tables/site_univ_effects.docx")
 ```
 
-
-
-# Richness Site and region interative model for context specificity (not in MS)
-```{r interactive site region}
-RI_sitereg <- glmmTMB(
-  bee_richness ~ region * site + (1 | region) + (1  | plotID),
-  family = nbinom1,
-  data = data_all_scaled
-)
-
-summary(RI_sitereg)
-check_model(RI_sitereg)
-
-```
-Fixed effects:
-
-Bee richness differed significantly among regions (Table X), with strong evidence for lower richness in Region Thiele relative to the reference region (β = −1.55 ± 0.35, p < 0.001).
-Across regions, the focal site had substantially higher bee richness than the control site (β = 1.16 ± 0.23, p < 0.001).
-However, the effect of site depended on region, as indicated by a significant region × site interaction for Region Thiele (β = 1.54 ± 0.41, p < 0.001). This interaction reveals that the difference in bee richness between focal and control sites was markedly stronger in Region Thiele than in the reference region, whereas site effects did not differ significantly among the other regions.
-And for the random effects:
-
-Random effects accounted for repeated sampling at the plot level, with moderate variation in baseline bee richness among plots (SD = 0.18). This indicates that plots differed in overall richness independently of region and site effects and justifies the inclusion of plot identity as a random intercept.
-gpt
-
-
-```{r plot site region interactive model}
-data_all_scaled$site   <- factor(data_all_scaled$site,   levels = c("control", "focal"))
-data_all_scaled$region <- factor(data_all_scaled$region)
-
-# Color palette
-site_cols <- c(
-  "control" = "#D95F09",
-  "focal"   = "#2C7FB8"
-)
-
-# emmeans predictions
-em_rs <- emmeans(RI_sitereg, ~ site | region, type = "response")
-pred_rs <- as.data.frame(em_rs)
-
-# rename to match your existing plot code
-pred_rs <- pred_rs %>%
-  rename(predicted = response,
-         conf.low  = asymp.LCL,
-         conf.high = asymp.UCL)
-
-pred_rs$region <- factor(pred_rs$region, levels = levels(data_all_scaled$region))
-pred_rs$site   <- factor(pred_rs$site,   levels = c("control", "focal"))
-
-# Plot
-p_rich_rs <- ggplot() +
-
-  # raw data jitter
-  geom_jitter(
-    data = data_all_scaled,
-    aes(x = site, y = bee_richness, colour = site),
-    width = 0.12, alpha = 0.20, size = 1.6,
-    show.legend = FALSE
-  ) +
-
-  # predicted means 
-  geom_point(
-    data = pred_rs,
-    aes(x = site, y = predicted, colour = site),
-    size = 3.8,
-    show.legend = FALSE
-  ) +
-
-  # 95% CIs  
-  geom_errorbar(
-    data = pred_rs,
-    aes(x = site, ymin = conf.low, ymax = conf.high, colour = site),
-    width = 0.10, linewidth = 1,
-    show.legend = FALSE
-  ) +
-
-  scale_colour_manual(values = site_cols) +
-
-  # facet by region
-  facet_wrap(~ region, nrow = 1) +
-
-  labs(
-    x = NULL,
-    y = "Bee species richness",
-    title = "Predicted Bee Richness by Region × Site",
-    subtitle = "Points = model-estimated means ± 95% CI \nJittered points = raw observations"
-  ) +
-
-  theme_minimal(base_size = 13) +
-  theme(
-    panel.grid.major.x = element_blank(),
-    panel.grid.minor = element_blank(),
-    plot.title = element_text(face = "bold", size = 15),
-    plot.subtitle = element_text(size = 11),
-    axis.title.y = element_text(margin = margin(r = 8)),
-    panel.spacing = unit(0,"lines")
-  )
-
-p_rich_rs
-
-```
-
-```{r print richness sitreg plot to tiff}
-tiff(
-  file.path("..", "output", "figures", "pred_bee_ri_sitexregion_600dpi.tiff"),
-  width = 3000, height = 2250, res = 600, compression = "lzw"
-)
-print(p_rich_rs)
-dev.off()
-```
-
-```{r predictions region site inetraction}
-emmeans(RI_sitereg, pairwise ~ site | region)
-```
-The effect size variation is still worth noting
-Back-transforming the contrasts to multiplicative effects:
-
-Aire  3.2× (2.0–5.0×)
-Scheulte  2.6× (1.7–4.0×)
-Schwarzbach 2.4× (1.5–3.7×)
-Thiele1 4.9× (7.7–28.7×)
-
-Focal sites supported significantly higher bee species richness than control sites in all four regions, with the magnitude of the effect varying strongly across regions (Figure X, Table X). Back‑transformed model contrasts indicate that bee richness at focal sites was approximately 2.9× higher in Aire, 2.6× higher in Scheulte, and 2.3× higher in Schwarzbach compared to their respective control sites.
-In Region Thiele, however, the focal–control contrast was substantially larger, with focal sites supporting approximately 14× higher bee richness than control sites. This pronounced effect resulted in a significant region × site interaction and indicates that the strength of the focal site effect in Thiele was qualitatively different from that observed in the other regions.
-Together, these results demonstrate a consistent positive effect of focal sites on bee richness across all regions, while also revealing substantial spatial variation in effect magnitude. The exceptionally strong response in Region Thiele suggests that local or landscape‑level factors may strongly amplify the effectiveness of focal sites there, potentially reflecting differences in initial habitat degradation, restoration intensity or quality, or broader landscape context.
-gpt
-```{r plot predictions region site interaction}
-# interaction-style predictions
-em_int <- emmeans(RI_sitereg, ~ region * site, type = "response")
-pred_int <- as.data.frame(em_int)
-
-# rename for plotting
-pred_int <- pred_int %>%
-  rename(
-    predicted = response,
-    conf.low  = asymp.LCL,
-    conf.high = asymp.UCL
-  )
-
-# ensure factor order
-pred_int$region <- factor(pred_int$region, levels = levels(data_all_scaled$region))
-pred_int$site   <- factor(pred_int$site, levels = c("control", "focal"))
-
-ggplot(pred_int,
-       aes(x = region, y = predicted, color = site, group = site)) +
-  
-  # lines = interaction
-  geom_line(linewidth = 1.2) +
-  
-  # points
-  geom_point(size = 3) +
-  
-  # confidence intervals
-  geom_errorbar(
-    aes(ymin = conf.low, ymax = conf.high),
-    width = 0.15
-  ) +
-  
-  scale_color_manual(values = site_cols) +
-  
-  labs(
-    x = "Region",
-    y = "Predicted bee richness",
-    title = "Interaction between region and site",
-    subtitle = "Non-parallel lines indicate interaction"
-  ) +
-  
-  theme_bw()
-```
-
-```{r Model output table interactive model}
-# emmeans by region
-em_rs <- emmeans(RI_sitereg, ~ site | region, type = "response")
-em_rs_df <- as.data.frame(em_rs)
-
-# means
-means_rs <- em_rs_df %>%
-  transmute(
-    region,
-    site,
-    mean_ci = sprintf("%.2f (%.2f–%.2f)",
-                      response, asymp.LCL, asymp.UCL)
-  ) %>%
-  pivot_wider(names_from = site, values_from = mean_ci)
-
-# contrasts per region
-contr_rs <- contrast(em_rs, "revpairwise") %>%
-  summary(infer = TRUE, type = "response") %>%
-  as.data.frame()
-
-contr_rs_out <- contr_rs %>%
-  transmute(
-    region,
-    effect_ratio = sprintf("%.2f", ratio),
-    conf_int = sprintf("%.2f–%.2f", asymp.LCL, asymp.UCL),
-    p_value = signif(p.value, 3)
-  )
-
-# final table
-table_interactsite<- left_join(means_rs, contr_rs_out, by = "region")
-
-table_interactsite
-```
-
-```{r save interactive model output table}
-gt_table_interactsite <- table_interactsite %>%
+```{r save univsite model output table}
+gt_table_univsite <- table_univsite %>%
   gt() %>%
   cols_label(
-    region = "Region",
-    control  = "Control (mean ± 95% CI)",
-    focal    = "Focal (mean ± 95% CI)",
-    effect_ratio = "Effect Ratio",
-    conf_int = "95% CI",
-    p_value = "p-value"
+    response = "Response",
+    control  = "Control \n(mean ± 95% CI)",
+    focal    = "Focal \n(mean ± 95% CI)",
+    effect = "Focal vs Control \n(ratio ± 95% CI)",
+    p_value = "P-value"
   )
 
-gtsave(gt_table_interactsite, "../output/tables/site_interact_effects.docx")
-```
-
-# Visit interactive test
-```{r interactive site region}
-RI_sitevisit <- glmmTMB(
-  bee_richness ~ site * as.factor(visit) + (1 | region) + (1 | plotID),
-  family = nbinom1,
-  data = data_all_scaled
-)
-
-summary(RI_sitevisit)
-check_model(RI_sitevisit)
-r2(RI_sitevisit)
+gtsave(gt_table_univsite, filename = "../output/tables/Table_E1.docx")
 ```
 
 
-```{r}
-# Predicted bee richness across visit, for each site (focal vs control)
-preds <- ggpredict(RI_sitevisit, terms = c("visit [all]", "site"))
-
-# Quick look at the data
-preds
-
-plot_interaction <- ggplot(preds, aes(x = x, y = predicted, color = group, fill = group)) +
-  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.15, color = NA) +
-  geom_line(linewidth = 1) +
-  geom_point(size = 2.5) +
-  scale_color_manual(values = c("control" = "#4C72B0", "focal" = "#DD8452"),
-                      labels = c("Control", "Revitalised")) +
-  scale_fill_manual(values = c("control" = "#4C72B0", "focal" = "#DD8452"),
-                     labels = c("Control", "Revitalised")) +
-  labs(x = "Survey visit",
-       y = "Predicted bee richness",
-       color = "Site type",
-       fill = "Site type") +
-  theme_classic(base_size = 13) +
-  theme(
-    legend.position = c(0.15, 0.85),
-    legend.background = element_rect(fill = "white", color = NA),
-    axis.title = element_text(face = "bold"),
-    panel.grid.minor = element_blank()
-  )
-
-plot_interaction
-
-plot_interaction <- ggplot(preds, aes(x = x, y = predicted, color = group, group = group)) +
-  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), 
-                width = 0.15, position = position_dodge(0.3), linewidth = 0.6) +
-  geom_line(position = position_dodge(0.3), linewidth = 0.7, linetype = "dashed", alpha = 0.6) +
-  geom_point(position = position_dodge(0.3), size = 3) +
-  scale_color_manual(values = c("control" = "#4C72B0", "focal" = "#DD8452"),
-                      labels = c("Control", "Revitalised")) +
-  labs(x = "Survey visit", y = "Predicted bee richness",
-       color = "Site type") +
-  theme_classic(base_size = 13) +
-  theme(
-    legend.position = c(0.15, 0.85),
-    legend.background = element_rect(fill = "white", color = NA),
-    axis.title = element_text(face = "bold"),
-    panel.grid.minor = element_blank()
-  )
-
-plot_interaction
-
-# with raw data scatter
-plot_interaction <- ggplot(preds, aes(x = x, y = predicted, color = group, group = group)) +
-  # Raw data first, so it sits behind the model predictions
-  geom_point(data = data_all_scaled, 
-             aes(x = as.numeric(as.factor(visit)), y = bee_richness, color = site),
-             position = position_jitterdodge(jitter.width = 0.1, dodge.width = 0.3),
-             alpha = 0.25, size = 1.5, inherit.aes = FALSE) +
-  geom_errorbar(aes(ymin = conf.low, ymax = conf.high), 
-                width = 0.15, position = position_dodge(0.3), linewidth = 0.6) +
-  geom_line(position = position_dodge(0.3), linewidth = 0.7, linetype = "dashed", alpha = 0.6) +
-  geom_point(position = position_dodge(0.3), size = 3) +
-  scale_color_manual(values = c("control" = "#4C72B0", "focal" = "#DD8452"),
-                      labels = c("Control", "Revitalised")) +
-  labs(x = "Survey visit", y = "Predicted bee richness",
-       color = "Site type") +
-  theme_classic(base_size = 13) +
-  theme(
-    legend.position = c(0.15, 0.85),
-    legend.background = element_rect(fill = "white", color = NA),
-    axis.title = element_text(face = "bold"),
-    panel.grid.minor = element_blank()
-  )
-
-plot_interaction
-```
-```{r}
+## Survey-level site and visit interactive
+Run models for all metrics
+```{r fit models}
 # Abundance
 AB_sitevisit <- glmmTMB(
   bee_abundance ~ site * as.factor(visit) + (1 | region) + (1 + visit | plotID),
@@ -868,14 +532,14 @@ AB_sitevisit <- glmmTMB(
   data = data_all_scaled
 )
 
-# Richness (already fitted)
+# Richness
 RI_sitevisit <- glmmTMB(
   bee_richness ~ site * as.factor(visit) + (1 | region) + (1 + visit | plotID),
   family = nbinom1,
   data = data_all_scaled
 )
 
-# Hill q1 (Shannon diversity) - log-gaussian, matching your univariate Q1_site
+# Hill q1
 Q1_sitevisit <- glmmTMB(
   log(bee_hill_q1) ~ site * as.factor(visit) + (1 | region) + (1 + visit | plotID),
   family = gaussian(),
@@ -890,7 +554,9 @@ check_model(AB_sitevisit)
 check_model(RI_sitevisit)
 check_model(Q1_sitevisit)
 ```
-```{r}
+
+### Model predictions plot
+```{r plot predictions}
 plot_sitevisit <- function(model, response_var, y_label, back_transform_log = FALSE) {
   
   preds <- ggpredict(model, terms = c("visit", "site"))
@@ -958,7 +624,7 @@ p_combined_sv <- (
 p_combined_sv
 ```
 
-```{r}
+```{r export figure}
 # save tiff
 tiff(
   file.path("..", "output", "figures", "sitevisit_600dpi.tiff"),
@@ -968,7 +634,17 @@ print(p_combined_sv)
 dev.off()
 ```
 
+```{r export figure}
+# save tiff
+tiff(
+  file.path("..", "output", "figures", "Figure_H1.tiff"),
+  width = 3000, height = 6000, res = 600, compression = "lzw"
+)
+print(p_combined_sv)
+dev.off()
+```
 
+### Model output table
 ```{r}
 extract_sitevisit_table <- function(model, response_name) {
   
@@ -1199,7 +875,7 @@ gt_table_sitevisit <- table_sitevisit_final %>%
 gt_table_sitevisit
 ```
 
-```{r}
+```{r export table }
 # Export
 gtsave(
   gt_table_sitevisit,
@@ -1207,120 +883,86 @@ gtsave(
 )
 ```
 
-
-
-# Merged visits models (not in MS)
-Load data
-```{r}
-data_plot_scaled <- readRDS(
-  file.path("..", "data", "cleaned", "data_plot_scaled.rds")
+```{r export table }
+# Export
+gtsave(
+  gt_table_sitevisit,
+  filename = "../output/tables/Table_H1.docx"
 )
 ```
 
-```{r fit richness model on nbinom2}
-nb2_rich <- glmmTMB(
-  bee_richness ~ site + (1 | region),
-  family = nbinom2,
-  data = data_plot_scaled
+
+# Rarefied data - pooled across visits
+Load rarefied data
+```{r load data}
+data_model_cov <- readRDS(file.path(
+  "..", "data", "cleaned", "data_model_cov.rds"))
+
+data_model_size <- readRDS(file.path(
+  "..", "data", "cleaned", "data_model_size.rds"))
+```
+
+
+# Coverage-rarefied models
+## Richness
+```{r Coverage-based rarefaction model}
+RRIcov_site <- glmmTMB(
+  richness_rarefied_cov ~ site + (1 | region),
+  data = data_model_cov,
+  family = Gamma(link = "log")
 )
 
-summary(nb2_rich)
+summary(RRIcov_site)
 
-res_nb2 <- simulateResiduals(nb2_rich)
-plot(res_nb2)
-testDispersion(nb2_rich)
-testZeroInflation(nb2_rich)
+check_model(RRIcov_site)
 
-check_model(nb2_rich)
+# Predicted values
+pred_cov_rich <- emmeans(RRIcov_site, ~ site, type = "response")
+contrast(pred_cov_rich, "revpairwise")
+r2(RRIcov_site)
 ```
 
-```{r fit richness model on nbinom1}
-nb1_rich <- glmmTMB(
-  bee_richness ~ site + (1 | region),
-  family = nbinom1,
-  data = data_plot_scaled
-)
+```{r plot predicted coverage-based rarefaction}
+# Predicted marginal means
+pred_site_rrich_cov <- ggpredict(RRIcov_site, terms = "site", type = "fixed")
 
-summary(nb1_rich)
-
-res_nb1 <- simulateResiduals(nb1_rich)
-plot(res_nb1)
-testDispersion(nb1_rich)
-testZeroInflation(nb1_rich)
-
-check_model(nb1_rich)
-```
-
-```{r richness pooled site model}
-PRI_site <- glmmTMB(
-  bee_richness ~ site + (1 | region),
-  family = nbinom1,
-  data = data_plot_scaled
-)
-
-print(summary(PRI_site))
-```
-
-```{r richness site model predicted values}
-# Absolute predicted richness per site
-pred_pri <- emmeans(PRI_site, ~ site, type = "response")
-
-# Absolute difference
-contrast(pred_pri, "revpairwise")
-```
-
-```{r plot model predictions richness}
-# Predicted marginal means for site on the response scale
-pred_site_prich <- ggpredict(PRI_site, terms = "site", type = "fixed")
-
-# ensure plotting order (control, focal)
-pred_site_prich$x <- factor(pred_site_prich$x, levels = c("control", "focal"))
-data_plot_scaled$site <- factor(data_plot_scaled$site, levels = c("control", "focal"))
+# ensure plotting order
+pred_site_rrich_cov$x <- factor(pred_site_rrich_cov$x, levels = c("control", "focal"))
+data_model_cov$site <- factor(data_model_cov$site, levels = c("control", "focal"))
 
 # Color palette
 site_cols <- list(
   "focal" = "#2C7FB8",
-  "control"   = "#D95F09",
-  "focal_light"   = "cadetblue3",
+  "control" = "#D95F09",
+  "focal_light" = "cadetblue3",
   "control_light" = "#D95"
-  )
+)
 
-# Plot: predicted means ± 95% CI with raw jittered points
-
-p_prich <- ggplot() +
-  # 1) Raw data (plot × visit), jittered in background
+# Plot
+p_rrich_cov <- ggplot() +
   geom_jitter(
-    data = data_plot_scaled,
-    aes(x = site, y = bee_richness, colour = site),
+    data = data_model_cov,
+    aes(x = site, y = richness_rarefied_cov, colour = site),
     width = 0.12, alpha = 0.15, size = 1.6, show.legend = FALSE
   ) +
-
-  # 2) Model-predicted means (ggeffects output; response scale)
   geom_point(
-    data = pred_site_prich,
+    data = pred_site_rrich_cov,
     aes(x = x, y = predicted, colour = x),
     size = 3.8, show.legend = FALSE
   ) +
-
-  # 3) 95% confidence intervals
   geom_errorbar(
-    data = pred_site_prich,
+    data = pred_site_rrich_cov,
     aes(x = x, ymin = conf.low, ymax = conf.high, colour = x),
     width = 0.10, linewidth = 1, show.legend = FALSE
   ) +
-
-  # Use identical site colours for both layers
   scale_colour_manual(values = site_cols) +
-
-  # Labels
+  scale_x_discrete(labels = c("control" = "Control", "focal" = "Focal")) +
   labs(
     x = NULL,
-    y = "Bee species richness",
-    title = "Predicted Bee Richness per Plot by Site (pooled visits)",
-    subtitle = "Points = model-estimated means ± 95% CI \nJittered points = raw observations"
+    y = "Bee richness \n (coverage-rarefied)",
+    title = "Predicted Bee Richness per Plot by Site (coverage-based rarefaction)",
+    subtitle = "Points = model-estimated means ± 95% CI \nJittered points = standardised richness at equal coverage"
   ) +
-  
-  # Theme
   theme_minimal(base_size = 13) +
   theme(
     panel.grid.major.x = element_blank(),
@@ -1330,104 +972,583 @@ p_prich <- ggplot() +
     axis.title.y = element_text(margin = margin(r = 8))
   )
 
-p_prich
+p_rrich_cov
 ```
 
-
-# Plant diversity (not in MS)
-```{r fit model}
-
-nm_plant <- glmmTMB(
-  richness ~ 1 + (1 | region) + (1 + visit | plotID),
-  family = poisson,
-  data = data_all_scaled
+## Hill q1
+```{r Coverage-based rarefaction model (Hill q1)}
+RQ1cov_site <- glmmTMB(
+  hill_q1_rarefied_cov ~ site + (1 | region),
+  data = data_model_cov,
+  family = gaussian()
 )
 
-bm_plant <- glmmTMB(
-  richness ~ site + (1 | region) + (1 + visit | plotID),
-  family = poisson,
-  data = data_all_scaled
-)
+summary(RQ1cov_site)
 
-anova(nm_plant, bm_plant)
-# random-effect structure is stable enough to support inference
-# the visit random slope is not causing singularity
-# adding site explains substantial variation in richness
-# the data contain enough replication for strong inference
+check_model(RQ1cov_site)
 
-res <- simulateResiduals(bm_plant)
-plot(res)
-# no evidence for overdispersion, no deviation from expected residualdistribution
-# no outliers, no heterogeneity of variance between site types
-
-testDispersion(bm_plant)
-testZeroInflation(bm_plant)
-
-
-summary(bm_plant)
-confint(bm_plant)
-emmeans(bm_plant, pairwise ~ site)
-
-emm <- emmeans(bm_plant, ~ site, type = "response")
-summary(emm)
-
-# Absolute and relative difference
-exp(1.62) - exp(1.00)  # absolute
-exp(1.62) / exp(1.00)  # ratio
-# or directly from contrast:
-exp(0.62)              # ratio (focal/control)
+# Predicted values
+pred_cov_q1 <- emmeans(RQ1cov_site, ~ site, type = "response")
+contrast(pred_cov_q1, "revpairwise")
 ```
 
-```{r plot predicted plant diversity by site}
-# Predicted marginal means for plant richness
-pred_site_plant <- ggpredict(bm_plant, terms = "site", type = "fixed")
-pred_site_plant$x <- factor(pred_site_plant$x, levels = c("control", "focal"))
-data_all_scaled$site <- factor(data_all_scaled$site, levels = c("control", "focal"))
+```{r Plot predicted Hill q1 (coverage-based rarefaction)}
+# Predicted marginal means
+pred_site_q1_cov <- ggpredict(RQ1cov_site, terms = "site", type = "fixed")
 
-# Viridis-based colors (colorblind-safe)
-site_cols_plant <- c("control" = "#440154", "focal" = "#35B779")
+# ensure plotting order
+pred_site_q1_cov$x <- factor(pred_site_q1_cov$x, levels = c("control", "focal"))
+data_model_cov$site <- factor(data_model_cov$site, levels = c("control", "focal"))
+
+# Color palette
+site_cols <- list(
+  "focal" = "#2C7FB8",
+  "control" = "#D95F09",
+  "focal_light" = "cadetblue3",
+  "control_light" = "#D95"
+)
 
 # Plot
-p_plant <- ggplot() +
+p_q1_cov <- ggplot() +
   geom_jitter(
-    data = data_all_scaled,
-    aes(x = site, y = richness, colour = site),
+    data = data_model_cov,
+    aes(x = site, y = hill_q1_rarefied_cov, colour = site),
     width = 0.12, alpha = 0.15, size = 1.6, show.legend = FALSE
   ) +
   geom_point(
-    data = pred_site_plant,
+    data = pred_site_q1_cov,
     aes(x = x, y = predicted, colour = x),
     size = 3.8, show.legend = FALSE
   ) +
   geom_errorbar(
-    data = pred_site_plant,
+    data = pred_site_q1_cov,
     aes(x = x, ymin = conf.low, ymax = conf.high, colour = x),
     width = 0.10, linewidth = 1, show.legend = FALSE
   ) +
-  scale_colour_manual(values = site_cols_plant) +
+  scale_colour_manual(values = site_cols) +
+  scale_x_discrete(labels = c("control" = "Control", "focal" = "Focal")) +
   labs(
     x = NULL,
-    y = "Plant species richness",
-    title = "Predicted Flowering Plant Richness per Plot by Site",
-    subtitle = "Points = model-estimated means ± 95% CI\nJittered points = raw observations"
+    y = "Bee Shannon diversity \n (coverage-rarefied)",
+    title = "Predicted Bee Diversity per Plot by Site (coverage-based rarefaction, q = 1)",
+    subtitle = "Points = model-estimated means ± 95% CI \nJittered points = standardised Hill q1 at equal coverage"
   ) +
   theme_minimal(base_size = 13) +
   theme(
     panel.grid.major.x = element_blank(),
     panel.grid.minor = element_blank(),
-    plot.title = element_text(face = "bold", size = 13),
+    plot.title = element_text(face = "bold", size = 15),
     plot.subtitle = element_text(size = 11),
     axis.title.y = element_text(margin = margin(r = 8))
   )
 
-p_plant
+p_q1_cov
 ```
-```{r print plot to tiff}
+
+
+## Model predictions patchwork plot
+```{r model predictions patchwork plor coverage based rarefaction}
+# Shared publication theme
+theme_pub <- theme_minimal(base_size = 16) +
+  theme(
+    axis.text = element_text(size = 16),
+    axis.title = element_text(size = 18),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)
+  )
+# clean plots
+p_rrich_cov_clean <- p_rrich_cov +
+  labs(title = NULL, subtitle = NULL) +
+  theme_pub
+
+p_q1_cov_clean <- p_q1_cov +
+  labs(title = NULL, subtitle = NULL) +
+  theme_pub
+
+# Combine plots
+p_cov_combined <- p_rrich_cov_clean + p_q1_cov_clean +
+  patchwork::plot_layout(ncol = 2) +
+  patchwork::plot_annotation(
+    tag_levels = "a",
+    tag_prefix = "(",
+    tag_suffix = ")"
+  )
+
+p_cov_combined
+```
+
+```{r export plot}
+# save tiff
 tiff(
-  file.path("..", "output", "figures", "pred_plant_Q1_site_600dpi.tiff"),
-  width = 3000, height = 2250, res = 600, compression = "lzw"
+  file.path("..", "output", "figures", "preds_bee_covgrar_600dpi.tiff"),
+  width = 5000, height = 2500, res = 600, compression = "lzw"
 )
-print(p_plant)
+
+print(p_cov_combined)
+
 dev.off()
+```
+
+```{r export plot}
+tiff(
+  file.path("..", "output", "figures", "Figure_4.tiff"),
+  width = 5000, height = 2500, res = 600, compression = "lzw"
+)
+
+print(p_cov_combined)
+
+dev.off()
+```
+
+
+## Model outputs table
+```{r Model ouputs table coverage based rarefaction}
+# helper function
+extract_site_table_rarefied <- function(model, response_name, effect_type) {
+  
+  em <- emmeans(model, ~ site, type = "response")
+  em_df <- as.data.frame(em)
+  
+  mean_col  <- if ("response" %in% names(em_df)) "response" else "emmean"
+  lower_col <- if ("asymp.LCL" %in% names(em_df)) "asymp.LCL" else "lower.CL"
+  upper_col <- if ("asymp.UCL" %in% names(em_df)) "asymp.UCL" else "upper.CL"
+  
+  means_wide <- em_df |>
+    mutate(site = as.character(site)) |>
+    transmute(
+      site,
+      mean = .data[[mean_col]],
+      lower = .data[[lower_col]],
+      upper = .data[[upper_col]]
+    ) |>
+    mutate(mean_ci = sprintf("%.2f (%.2f\u2013%.2f)", mean, lower, upper)) |>
+    select(site, mean_ci) |>
+    pivot_wider(names_from = site, values_from = mean_ci)
+  
+  # raw means (unformatted), needed to compute % change for additive-scale models
+  control_mean <- em_df[[mean_col]][em_df$site == "control"]
+  focal_mean   <- em_df[[mean_col]][em_df$site == "focal"]
+  pct_change   <- (focal_mean - control_mean) / control_mean * 100
+  
+  contr <- contrast(em, "revpairwise") |>
+    summary(infer = TRUE, type = "response") |>
+    as.data.frame() |>
+    rename(
+      lower = any_of(c("asymp.LCL", "lower.CL")),
+      upper = any_of(c("asymp.UCL", "upper.CL"))
+    )
+  
+  if (effect_type == "ratio") {
+    contr_out <- contr |>
+      transmute(
+        effect = sprintf("%.2f\u00d7 (%.2f\u2013%.2f)", ratio, lower, upper),
+        p_value = ifelse(p.value < 0.001, "< 0.001", sprintf("%.3f", p.value))
+      )
+  } else {
+    contr_out <- contr |>
+      transmute(
+        effect = sprintf("+%.2f (%.2f\u2013%.2f); +%.0f%%", estimate, lower, upper, pct_change),
+        p_value = ifelse(p.value < 0.001, "< 0.001", sprintf("%.3f", p.value))
+      )
+  }
+  
+  # R2 extraction
+  r2_vals <- tryCatch(r2(model), error = function(e) NULL)
+  r2_marg <- if (!is.null(r2_vals$R2_marginal)) sprintf("%.3f", r2_vals$R2_marginal) else NA
+  r2_cond <- if (!is.null(r2_vals$R2_conditional)) sprintf("%.3f", r2_vals$R2_conditional) else NA
+  
+  bind_cols(means_wide, contr_out) |>
+    mutate(
+      response = sprintf("%s (R\u00b2m = %s, R\u00b2c = %s)", response_name, r2_marg, r2_cond),
+      .before = everything()
+    )
+}
+
+tab_cov_rich <- extract_site_table_rarefied(RRIcov_site, "Bee richness \n(coverage-rarefied)", "ratio")
+tab_cov_q1   <- extract_site_table_rarefied(RQ1cov_site, "Bee Shannon diversity \n(coverage-rarefied)", "additive")
+
+table_cov_rarefied <- bind_rows(tab_cov_rich, tab_cov_q1)
+
+gt_table_cov <- table_cov_rarefied |>
+  gt() |>
+  cols_label(
+    response = "Response",
+    control  = "Control (mean \u00b1 95% CI)",
+    focal    = "Focal (mean \u00b1 95% CI)",
+    effect   = "Focal vs Control Difference (\u00b1 95% CI)",
+    p_value  = "P-value"
+  ) |>
+  cols_align(
+    align = "center",
+    columns = everything()
+  )
+
+gt_table_cov
+```
+
+```{r export table}
+gtsave(
+  gt_table_cov,
+  filename = "../output/tables/cov_rarefaction_effects.docx"
+)
+```
+
+```{r export table}
+gtsave(
+  gt_table_cov,
+  filename = "../output/tables/Table_1.docx"
+)
+```
+
+
+# Size-rarefied models
+## Richness
+```{r size-based rarefaction model}
+RRIsiz_site <- glmmTMB(
+  richness_rarefied_size ~ site + (1 | region),
+  data = data_model_size,
+  family = gaussian()
+)
+
+summary(RRIsiz_site)
+
+
+check_model(RRIsiz_site)
+
+# Predicted values
+pred_siz_rich <- emmeans(RRIsiz_site, ~ site, type = "response")
+contrast(pred_siz_rich, "revpairwise")
+```
+
+```{r plot predicted size-based rarefaction }
+# Predicted marginal means
+pred_site_rrich_size <- ggpredict(RRIsiz_site, terms = "site", type = "fixed")
+
+# ensure plotting order
+pred_site_rrich_size$x <- factor(pred_site_rrich_size$x, levels = c("control", "focal"))
+data_model_size$site <- factor(data_model_size$site, levels = c("control", "focal"))
+
+# Color palette
+site_cols <- list(
+  "focal" = "#2C7FB8",
+  "control" = "#D95F09",
+  "focal_light" = "cadetblue3",
+  "control_light" = "#D95"
+)
+
+# Plot
+p_rrich_size <- ggplot() +
+  geom_jitter(
+    data = data_model_size,
+    aes(x = site, y = richness_rarefied_size, colour = site),
+    width = 0.12, alpha = 0.15, size = 1.6, show.legend = FALSE
+  ) +
+  geom_point(
+    data = pred_site_rrich_size,
+    aes(x = x, y = predicted, colour = x),
+    size = 3.8, show.legend = FALSE
+  ) +
+  geom_errorbar(
+    data = pred_site_rrich_size,
+    aes(x = x, ymin = conf.low, ymax = conf.high, colour = x),
+    width = 0.10, linewidth = 1, show.legend = FALSE
+  ) +
+  scale_colour_manual(values = site_cols) +
+  scale_x_discrete(labels = c("control" = "Control", "focal" = "Focal")) +
+  labs(
+    x = NULL,
+    y = "Bee richness \n (size-standardised)",
+    title = "Predicted Bee Richness per Plot by Site (size-based rarefaction)",
+    subtitle = "Points = model-estimated means ± 95% CI \nJittered points = rarefied plot values"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold", size = 15),
+    plot.subtitle = element_text(size = 11),
+    axis.title.y = element_text(margin = margin(r = 8))
+  )
+
+p_rrich_size
+```
+
+
+## Hill q1
+```{r Size-based rarefaction model (Hill q1)}
+RRIsiz_q1_site <- glmmTMB(
+  hill_q1_rarefied_size ~ site + (1 | region),
+  data = data_model_size,
+  family = gaussian()
+)
+
+summary(RRIsiz_q1_site)
+
+check_model(RRIsiz_q1_site)
+
+# Predicted values
+pred_siz_q1 <- emmeans(RRIsiz_q1_site, ~ site, type = "response")
+contrast(pred_siz_rich, "revpairwise")
+```
+
+```{r Plot predicted size-based rarefaction (Hill q1)}
+# Predicted marginal means
+pred_site_q1_size <- ggpredict(RRIsiz_q1_site, terms = "site", type = "fixed")
+
+# ensure plotting order
+pred_site_q1_size$x <- factor(pred_site_q1_size$x, levels = c("control", "focal"))
+data_model_size$site <- factor(data_model_size$site, levels = c("control", "focal"))
+
+# Plot
+p_q1_size <- ggplot() +
+  geom_jitter(
+    data = data_model_size,
+    aes(x = site, y = hill_q1_rarefied_size, colour = site),
+    width = 0.12, alpha = 0.15, size = 1.6, show.legend = FALSE
+  ) +
+  geom_point(
+    data = pred_site_q1_size,
+    aes(x = x, y = predicted, colour = x),
+    size = 3.8, show.legend = FALSE
+  ) +
+  geom_errorbar(
+    data = pred_site_q1_size,
+    aes(x = x, ymin = conf.low, ymax = conf.high, colour = x),
+    width = 0.10, linewidth = 1, show.legend = FALSE
+  ) +
+  scale_colour_manual(values = site_cols) +
+  scale_x_discrete(labels = c("control" = "Control", "focal" = "Focal")) +
+  labs(
+    x = NULL,
+    y = "Bee Shannon diversity \n (size-standardised)",
+    title = "Predicted Bee Diversity per Plot by Site (size-based rarefaction)",
+    subtitle = "Points = model-estimated means ± 95% CI \nJittered points = rarefied plot values"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    panel.grid.major.x = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.title = element_text(face = "bold", size = 15),
+    plot.subtitle = element_text(size = 11),
+    axis.title.y = element_text(margin = margin(r = 8))
+  )
+
+p_q1_size
+```
+
+
+## Model predictions patchwork plot
+```{r model predictions patchwork plos size based rarefaction}
+# Shared publication theme
+theme_pub <- theme_minimal(base_size = 16) +
+  theme(
+    axis.text = element_text(size = 16),
+    axis.title = element_text(size = 18),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)
+  )
+
+# clean plots
+p_rrich_size_clean <- p_rrich_size +
+  labs(title = NULL, subtitle = NULL) +
+  theme_pub
+
+p_q1_size_clean <- p_q1_size +
+  labs(title = NULL, subtitle = NULL) +
+  theme_pub
+
+# combine plots
+p_size_combined <- p_rrich_size_clean + p_q1_size_clean +
+  patchwork::plot_layout(ncol = 2) +
+  patchwork::plot_annotation(
+    tag_levels = "a",
+    tag_prefix = "(",
+    tag_suffix = ")"
+  )
+
+p_size_combined
+```
+
+```{r export figure}
+# save tiff
+tiff(
+  file.path("..", "output", "figures", "preds_bee_sizerar_600dpi.tiff"),
+  width = 5000, height = 2500, res = 600, compression = "lzw"
+)
+print(p_size_combined)
+dev.off()
+```
+
+```{r export figure}
+tiff(
+  file.path("..", "output", "figures", "Figure_D1.tiff"),
+  width = 5000, height = 2500, res = 600, compression = "lzw"
+)
+print(p_size_combined)
+dev.off()
+```
+
+
+## Model outputs table
+```{r Model outputs table size-based rarefation}
+# helper function
+extract_site_table_rarefied <- function(model, response_name, effect_type) {
+  
+  em <- emmeans(model, ~ site)
+  em_df <- as.data.frame(em)
+  
+  lower_col <- if ("asymp.LCL" %in% names(em_df)) "asymp.LCL" else "lower.CL"
+  upper_col <- if ("asymp.UCL" %in% names(em_df)) "asymp.UCL" else "upper.CL"
+  
+  means_wide <- em_df |>
+    mutate(site = as.character(site)) |>
+    transmute(
+      site,
+      mean = emmean,
+      lower = .data[[lower_col]],
+      upper = .data[[upper_col]]
+    ) |>
+    mutate(
+      mean_ci = sprintf(
+        "%.2f (%.2f–%.2f)",
+        mean,
+        lower,
+        upper
+      )
+    ) |>
+    select(site, mean_ci) |>
+    pivot_wider(
+      names_from = site,
+      values_from = mean_ci
+    )
+  
+  # percentage increase
+  control_mean <- em_df$emmean[em_df$site == "control"]
+  focal_mean   <- em_df$emmean[em_df$site == "focal"]
+  pct_change   <- (focal_mean - control_mean) / control_mean * 100
+  
+  if (effect_type == "ratio") {
+    
+    contr <- contrast(
+      em,
+      "revpairwise"
+    ) |>
+      summary(
+        infer = TRUE,
+        type = "response"
+      ) |>
+      as.data.frame()
+    
+    contr <- contr |>
+      rename(
+        lower = any_of(c("asymp.LCL", "lower.CL")),
+        upper = any_of(c("asymp.UCL", "upper.CL"))
+      )
+    
+    contr_out <- contr |>
+      transmute(
+        effect = sprintf(
+          "%.2f× (%.2f–%.2f)",
+          ratio,
+          lower,
+          upper
+        ),
+        p_value = ifelse(
+          p.value < 0.001,
+          "< 0.001",
+          sprintf("%.3f", p.value)
+        )
+      )
+    
+  } else {
+    
+    contr <- pairs(em) |>
+      summary(infer = TRUE) |>
+      as.data.frame()
+    
+    contr_out <- contr |>
+      transmute(
+        effect = sprintf(
+          "+%.2f (%.2f–%.2f); +%.0f%%",
+          -estimate,
+          -upper.CL,
+          -lower.CL,
+          pct_change
+        ),
+        p_value = ifelse(
+          p.value < 0.001,
+          "< 0.001",
+          sprintf("%.3f", p.value)
+        )
+      )
+  }
+  
+  # R²
+  r2_vals <- tryCatch(
+    performance::r2(model),
+    error = function(e) NULL
+  )
+  
+  r2_marg <- if (!is.null(r2_vals$R2_marginal))
+    sprintf("%.3f", r2_vals$R2_marginal)
+  else
+    NA
+  
+  r2_cond <- if (!is.null(r2_vals$R2_conditional))
+    sprintf("%.3f", r2_vals$R2_conditional)
+  else
+    NA
+  
+  bind_cols(
+    means_wide,
+    contr_out
+  ) |>
+    mutate(
+      response = sprintf(
+        "%s (R²m = %s, R²c = %s)",
+        response_name,
+        r2_marg,
+        r2_cond
+      ),
+      .before = everything()
+    )
+}
+
+tab_size_rich <- extract_site_table_rarefied(RRIsiz_site, "Bee richness \n(size-rarefied)", "absolute")
+tab_size_q1   <- extract_site_table_rarefied(RRIsiz_q1_site, "Bee Shannon diversity \n(size-rarefied)", "absolute")
+
+table_size_rarefied <- bind_rows(tab_size_rich, tab_size_q1)
+
+gt_table_size <- table_size_rarefied |>
+  gt() |>
+  cols_label(
+    response = "Response",
+    control  = "Control (mean ± 95% CI)",
+    focal    = "Focal (mean ± 95% CI)",
+    effect   = "Focal vs Control Difference (± 95% CI)",
+    p_value  = "P-value"
+  ) |>
+  cols_align(
+    align = "center",
+    everything()
+  )
+
+gt_table_size
+```
+
+```{r export table}
+gtsave(
+  gt_table_size,
+  filename = "../output/tables/size_rarefaction_effects.docx"
+)
+```
+
+```{r export table}
+gtsave(
+  gt_table_size,
+  filename = "../output/tables/Table_D1.docx"
+)
 ```
 
