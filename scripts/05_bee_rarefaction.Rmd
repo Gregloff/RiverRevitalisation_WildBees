@@ -1,5 +1,5 @@
 ---
-title: "04_bee_rarefaction"
+title: "05_bee_rarefaction"
 output: html_document
 ---
 
