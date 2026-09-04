@@ -1,6 +1,6 @@
 ---
-title: "load_data"
-output: html_document
+title: "01_load_data"
+author: Gregory B. Egloff
 ---
 
 ```{r load packages}
@@ -9,7 +9,7 @@ library(readxl)
 library(stringr)
 ```
 
-Import beedata and mapp_data, create metadata frame
+Import excel files and compile raw datasets for repository
 ```{r import data, include = FALSE}
 # nolint start: nonportable_path_linter.
 beedata <- read_excel("../../beedata_RRproject_2025.xlsx", skip = 1)

@@ -2,12 +2,11 @@
 title: "03_descriptive_analysis"
 output: html_document
 ---
+
 ```{r}
 library(dplyr)
 library(ggplot2)
-library(ggVennDiagram)
 library(grid)
-library(patchwork)
 library(posterior)
 library(purrr)
 library(stringr)
@@ -123,7 +122,7 @@ wilcox_results_abundance_vis <- plant_data |>
 
 
 # Wilcoxon tests for relative abundance by region and visit
-wilcox_results_abundance_regvis <- plant_data |>
+ wilcox_results_abundance_regvis <- plant_data |>
   group_by(region, visit) |>
   summarise(
     p_value = tryCatch(
@@ -144,11 +143,10 @@ wilcox_results_abundance_regvis <- plant_data |>
 
 ```{r plant data descriptive plots Abundance and Richness}
 ### Richness plots
-
 # Common y-axis limits
 common_ymax_richness <- max(plant_data$richness, na.rm = TRUE)
 
-# Richness by site type 
+# Richness by site type
 ggplot(plant_data, aes(x = site, y = richness, fill = site)) +
   geom_boxplot() +
   labs(title = "Plant Genus Richness per Plot by Site Type",
@@ -216,7 +214,7 @@ plot_Thiele <- ggplot(subset(plant_data, region == "Thiele"),
 
 # Schwarzbach
 plot_Schwarzbach <- ggplot(subset(plant_data, region == "Schwarzbach"),
-                            aes(x = factor(visit), y = richness, fill = site)) +
+                           aes(x = factor(visit), y = richness, fill = site)) +
   geom_boxplot(position = position_dodge()) +
   coord_cartesian(ylim = c(0, common_ymax_richness)) +
   labs(title = "Schwarzbach", x = "Visit", y = "Genus Richness per Plot") +
@@ -320,8 +318,6 @@ plot_Schwarzbach <- ggplot(subset(plant_data, region == "Schwarzbach"),
 
 # Patchwork combine
 (plot_Aire | plot_Scheulte) / (plot_Thiele | plot_Schwarzbach)
-
-
 ```
 
 ```{r plant data Wilcoxon tests Hill indices}
@@ -536,7 +532,6 @@ plots <- map(regions_to_plot, plot_region_patch)
 
 patchiness_patchwork <- (plots[[1]] | plots[[2]]) / (plots[[3]] | plots[[4]])
 patchiness_patchwork
-
 ```
 
 
@@ -544,7 +539,7 @@ patchiness_patchwork
 ```{r bee data overview numbers}
 # total species count
 total_species <- length(which(names(bee_data) == "Andrena aeneiventris")
-                       :which(names(bee_data) == "Stelis punctulatissima"))
+                        :which(names(bee_data) == "Stelis punctulatissima"))
 
 # Derive species column block by names (robust to column reordering)
 start <- match("Andrena aeneiventris", names(bee_data))
@@ -562,68 +557,24 @@ sum(control_pres)
 sum(focal_pres)
 ```
 
-Venn Diagram of species composition
-```{r}
-# Get species present in each site type
-species_focal   <- names(which(colSums(bee_data[bee_data$site == "focal",   species_cols] > 0, na.rm = TRUE) > 0))
-species_control <- names(which(colSums(bee_data[bee_data$site == "control", species_cols] > 0, na.rm = TRUE) > 0))
-
-# Quick check
-length(species_focal)
-length(species_control)
-length(intersect(species_focal, species_control))
-
-n_focal      <- length(species_focal)
-n_control    <- length(species_control)
-n_shared     <- length(intersect(species_focal, species_control))
-n_only_focal   <- n_focal   - n_shared
-n_only_control <- n_control - n_shared
-
-grid.newpage()
-venn <- draw.pairwise.venn(
-  area1          = n_focal,
-  area2          = n_control,
-  cross.area     = n_shared,
-  category       = c("Focal", "Control"),
-  fill           = c("#2C7FB8", "#D95F09"),
-  alpha          = 0.4,
-  col            = "white",
-  cex            = 1.8,
-  cat.cex        = 1.5,
-  cat.col        = c("#2C7FB8", "#D95F09"),
-  cat.fontface   = "bold",
-  fontfamily     = "sans",
-  cat.fontfamily = "sans",
-  margin         = 0.08,
-  cat.pos        = c(-20, 20),
-  cat.dist       = 0.06
-)
-```
-
-```{r print venn diagram bee species by site}
-tiff("../output/figures/venn_species_sites.tiff",
-     width = 3000, height = 2500, res = 600, compression = "lzw")
-grid.draw(venn)
-dev.off()
-```
-
+Accumulation curve
 ```{r species accumulation curve}
 
 p_accumsite <- function() {
   # --- 1. Define metadata columns to exclude ---
   meta_cols <- c(
-    "surveyID","plotID","site","region","visit","plot",
-    "fieldIDsum","bee_richness","bee_abundance_nofieldID","bee_abundance",
-    "bee_hill_q1","bee_hill_q2",
-    "RLabund_LC","RLabund_NT","RLabund_VU","RLabund_EN","RLabund_DD",
-    "RLrich_LC","RLrich_NT","RLrich_VU","RLrich_EN","RLrich_DD",
-    "RLrich_CR","RLabund_CR",
-    "RLrich_threatened","RLabund_threatened",
-    "RLrich_total","RLabund_total"
+    "surveyID", "plotID", "site", "region", "visit", "plot",
+    "fieldIDsum", "bee_richness", "bee_abundance_nofieldID", "bee_abundance",
+    "bee_hill_q1", "bee_hill_q2",
+    "RLabund_LC", "RLabund_NT", "RLabund_VU", "RLabund_EN", "RLabund_DD",
+    "RLrich_LC", "RLrich_NT", "RLrich_VU", "RLrich_EN", "RLrich_DD",
+    "RLrich_CR", "RLabund_CR",
+    "RLrich_threatened", "RLabund_threatened",
+    "RLrich_total", "RLabund_total"
   )
 
   # --- 2. Keep only species matrix ---
-  bee_matrix <- bee_data %>%
+  bee_matrix <- bee_data |>
     select(-all_of(meta_cols))
 
   # Safety checks
@@ -686,19 +637,17 @@ p_accumsite <- function() {
 }
 
 p_accumsite()
-
 ```
 
 
 
 ```{r print species accumulation cirve by site}
-
-tiff(
-  file.path("..", "..", "output", "figures", "spec_accum_site.tiff"),
-  width = 3000, height = 2250, res = 600, compression = "lzw"
-)
-p_accumsite()
-dev.off()
+# tiff(
+#   file.path("..", "..", "output", "figures", "spec_accum_site.tiff"),
+#   width = 3000, height = 2250, res = 600, compression = "lzw"
+# )
+# p_accumsite()
+# dev.off()
 ```
 
 Species accumulation curve by region per site type
@@ -706,18 +655,18 @@ Species accumulation curve by region per site type
 p_accumregion <- function() {
   # --- 1. Metadata ---
   meta_cols <- c(
-    "surveyID","plotID","site","region","visit","plot",
-    "fieldIDsum","bee_richness","bee_abundance_nofieldID","bee_abundance",
-    "bee_hill_q1","bee_hill_q2",
-    "RLabund_LC","RLabund_NT","RLabund_VU","RLabund_EN","RLabund_DD",
-    "RLrich_LC","RLrich_NT","RLrich_VU","RLrich_EN","RLrich_DD",
-    "RLrich_CR","RLabund_CR",
-    "RLrich_threatened","RLabund_threatened",
-    "RLrich_total","RLabund_total"
+    "surveyID", "plotID", "site", "region", "visit", "plot",
+    "fieldIDsum", "bee_richness", "bee_abundance_nofieldID", "bee_abundance",
+    "bee_hill_q1", "bee_hill_q2",
+    "RLabund_LC", "RLabund_NT", "RLabund_VU", "RLabund_EN", "RLabund_DD",
+    "RLrich_LC", "RLrich_NT", "RLrich_VU", "RLrich_EN", "RLrich_DD",
+    "RLrich_CR", "RLabund_CR",
+    "RLrich_threatened", "RLabund_threatened",
+    "RLrich_total", "RLabund_total"
   )
 
   # --- 2. Species matrix ---
-  bee_matrix <- bee_data %>%
+  bee_matrix <- bee_data |>
     select(-all_of(meta_cols))
 
   # --- 3. Colors ---
@@ -747,11 +696,6 @@ p_accumregion <- function() {
     # split by site
     mat_control <- mat_region[site_region == "control", ]
     mat_focal   <- mat_region[site_region == "focal", ]
-
-    # --- IMPORTANT: keep OR remove empty samples depending on your choice ---
-    # Uncomment if you want filtered version:
-    # mat_control <- mat_control[rowSums(mat_control) > 0, ]
-    # mat_focal   <- mat_focal[rowSums(mat_focal) > 0, ]
 
     # safety check
     if (nrow(mat_control) == 0 | nrow(mat_focal) == 0) {
@@ -809,7 +753,6 @@ p_accumregion()
 
 
 ```{r bee data wilcoxon tests}
-
 # Bee species richness - run Wilcoxon test across all visits and regions
 wilcox_beeri_all <- wilcox.test(bee_richness ~ site, data = bee_data)
 
@@ -823,18 +766,16 @@ sig_label_beeri_all <- case_when(
 # Bee species richness - run Wilcoxon test per visit across all regions
 wilcox_beeri_by_visit <- bee_data |>
   group_by(visit) |>
-  summarise(
-    p_value = tryCatch(
-      wilcox.test(bee_richness ~ site)$p.value,
-      error = function(e) NA_real_),
+  summarise(p_value = tryCatch(
+    wilcox.test(bee_richness ~ site)$p.value,
+    error = function(e) NA_real_),
     sig_label = case_when(
       is.na(p_value) ~ "NA",
       p_value < 0.001 ~ "***",
       p_value < 0.01 ~ "**",
       p_value < 0.05 ~ "*",
       p_value < 0.1 ~ ".",
-      TRUE ~ "ns"
-    ),
+      TRUE ~ "ns"),
     label = paste0(sig_label, "\n(p = ", round(p_value, 3), ")"),
     .groups = "drop"
   )
@@ -924,7 +865,6 @@ wilcox_results_beeab <- wilcox_results_beeab |>
 ```
 
 ```{r bee data descriptive plots}
-                   
 #boxplot bee species richness by site type and visit
 ggplot(bee_data, aes(x = factor(visit), y = bee_richness, fill = site)) +
   geom_boxplot() +
@@ -964,7 +904,8 @@ plot_Aire <- ggplot(subset(bee_data, region == "Aire"),
   scale_fill_manual(values = c("focal" = "#1b9e77", "control" = "#d95f02")) +
   theme_minimal()
 
-aire_labels <- wilcox_results_beeri |> filter(region == "Aire") # Filter and add wilcox labels for Aire
+# Filter and add wilcox labels for Aire
+aire_labels <- wilcox_results_beeri |> filter(region == "Aire")
 plot_Aire <- plot_Aire +
   geom_text(data = aire_labels,
             aes(x = factor(visit), y = common_ymax - 1, label = sig_label),
@@ -1121,59 +1062,57 @@ plot_Schwarzbach <- plot_Schwarzbach +
 
 # Combine with patchwork
 (plot_Aire | plot_Scheulte) / (plot_Thiele | plot_Schwarzbach)
-
 ```
 
-```{r export for BAFU report}
-
-#boxplot bee species richness by site type (all visits combined)
-ggplot(bee_data, aes(x = site, y = bee_richness, fill = site)) +
-  geom_boxplot() +
-  labs(title = "Bee Species Richness per Plot by Site Type",
-       x = "Site Type",
-       y = "Number of Bee Species (Richness)") +
-  theme_minimal() +
-  annotate("text", x = 1.5, y = max(bee_data$bee_richness, na.rm = TRUE) - 1,
-           label = paste(sig_label_beeri_all),
-           size = 5)
-
-#boxplot bee abundance by site type (all visits combined)
-ggplot(bee_data, aes(x = site, y = bee_abundance, fill = site)) +
-  geom_boxplot() +
-  labs(title = "Total Bee Abundance per Plot by Site Type",
-       x = "Site Type",
-       y = "Total Bee Abundance") +
-  theme_minimal() +
-  annotate("text", x = 1.5, y = max(bee_data$bee_abundance, na.rm = TRUE) - 1,
-           label = paste(sig_label_beeab_all),
-           size = 5)
-
-ggplot(bee_data, aes(x = site, y = bee_richness, fill = site)) +
-  geom_boxplot(color = "black") +
-  stat_summary(fun = mean, geom = "point", shape = 21, size = 2,
-               fill = "white", color = "black", stroke = 0.8,
-               position = position_dodge(width = 0.75)) +
-  labs(title = "Richesse spécifique des abeilles par site",
-       x = "",
-       y = "Richesse spécifique par placette") +
-  scale_x_discrete(labels = c("focal" = "Revitalisé", "control" = "Non-Revitalisé")) +
-  scale_fill_manual(values = c("focal" = "#8c8c8c", "control" = "#66c2a5")) +
-  theme_classic() +
-  theme(axis.text.x = element_text(size = 16, margin = margin(t = 5)),
-        axis.text.y = element_text(size = 16, margin = margin(r = 5)),
-        axis.title.y = element_text(size = 21, margin = margin(r = 15)),
-        axis.title.x = element_text(size = 21),
-        axis.ticks.length = unit(0.25, "cm"),
-        plot.margin = margin(t = 20, r = 20, l = 5, b = 5),
-        plot.title = element_text(size = 21, face = "bold", hjust = 0.5, vjust = 4),
-        legend.position = "none",
-        panel.background = element_rect(fill = "white", color = NA),
-        panel.grid = element_blank()) +
-  coord_cartesian(ylim = c(0, max(bee_data$bee_richness, na.rm = TRUE) + 2)) +
-  annotate("text", x = 1.5, y = max(bee_data$bee_richness, na.rm = TRUE) + 1,
-           label = paste(sig_label_beeri_all),
-           size = 6, vjust = 1, hjust = 0.5)
-
+```{r export in local languages}
+# #boxplot bee species richness by site type (all visits combined)
+# ggplot(bee_data, aes(x = site, y = bee_richness, fill = site)) +
+#   geom_boxplot() +
+#   labs(title = "Bee Species Richness per Plot by Site Type",
+#        x = "Site Type",
+#        y = "Number of Bee Species (Richness)") +
+#   theme_minimal() +
+#   annotate("text", x = 1.5, y = max(bee_data$bee_richness, na.rm = TRUE) - 1,
+#            label = paste(sig_label_beeri_all),
+#            size = 5)
+# 
+# #boxplot bee abundance by site type (all visits combined)
+# ggplot(bee_data, aes(x = site, y = bee_abundance, fill = site)) +
+#   geom_boxplot() +
+#   labs(title = "Total Bee Abundance per Plot by Site Type",
+#        x = "Site Type",
+#        y = "Total Bee Abundance") +
+#   theme_minimal() +
+#   annotate("text", x = 1.5, y = max(bee_data$bee_abundance, na.rm = TRUE) - 1,
+#            label = paste(sig_label_beeab_all),
+#            size = 5)
+# 
+# ggplot(bee_data, aes(x = site, y = bee_richness, fill = site)) +
+#   geom_boxplot(color = "black") +
+#   stat_summary(fun = mean, geom = "point", shape = 21, size = 2,
+#                fill = "white", color = "black", stroke = 0.8,
+#                position = position_dodge(width = 0.75)) +
+#   labs(title = "Richesse spécifique des abeilles par site",
+#        x = "",
+#        y = "Richesse spécifique par placette") +
+#   scale_x_discrete(labels = c("focal" = "Revitalisé", "control" = "Non-Revitalisé")) +
+#   scale_fill_manual(values = c("focal" = "#8c8c8c", "control" = "#66c2a5")) +
+#   theme_classic() +
+#   theme(axis.text.x = element_text(size = 16, margin = margin(t = 5)),
+#         axis.text.y = element_text(size = 16, margin = margin(r = 5)),
+#         axis.title.y = element_text(size = 21, margin = margin(r = 15)),
+#         axis.title.x = element_text(size = 21),
+#         axis.ticks.length = unit(0.25, "cm"),
+#         plot.margin = margin(t = 20, r = 20, l = 5, b = 5),
+#         plot.title = element_text(size = 21, face = "bold", hjust = 0.5, vjust = 4),
+#         legend.position = "none",
+#         panel.background = element_rect(fill = "white", color = NA),
+#         panel.grid = element_blank()) +
+#   coord_cartesian(ylim = c(0, max(bee_data$bee_richness, na.rm = TRUE) + 2)) +
+#   annotate("text", x = 1.5, y = max(bee_data$bee_richness, na.rm = TRUE) + 1,
+#            label = paste(sig_label_beeri_all),
+#            size = 6, vjust = 1, hjust = 0.5)
+# 
 # ggsave("bee_richness.jpg",
 #        width  = 5333, height = 4105, units = "px", dpi = 800,
 #        plot = ggplot(bee_data, aes(x = site, y = bee_richness, fill = site)) +
@@ -1204,31 +1143,31 @@ ggplot(bee_data, aes(x = site, y = bee_richness, fill = site)) +
 
 
 
-ggplot(bee_data, aes(x = site, y = bee_abundance, fill = site)) +
-    geom_boxplot(color = "black") +
-    stat_summary(fun = mean, geom = "point", shape = 21, size = 2,
-                 fill = "white", color = "black", stroke = 0.8,
-                 position = position_dodge(width = 0.75)) +
-    labs(title = "Abondance des abeilles par site",
-         x = "",
-         y = "Abondance par placette") +
-    scale_x_discrete(labels = c("focal" = "Revitalisé", "control" = "Non-Revitalisé")) +
-    scale_fill_manual(values = c("focal" = "#66c2a5", "control" = "#8c8c8c")) + # Revitalisé = green, Chenalisé = gray
-    theme_classic() +
-    theme(axis.text.x = element_text(size = 16, margin = margin(t = 5)),
-          axis.text.y = element_text(size = 16, margin = margin(r = 5)),
-          axis.title.y = element_text(size = 21, margin = margin(r = 15)),
-          axis.title.x = element_text(size = 21),
-          axis.ticks.length = unit(0.25, "cm"),
-          plot.margin = margin(t = 20, r = 20, l = 5, b = 5),
-          plot.title = element_text(size = 21, face = "bold", hjust = 0.5, vjust = 4),
-          legend.position = "none",
-          panel.background = element_rect(fill = "white", color = NA),
-          panel.grid = element_blank()) +
-    coord_cartesian(ylim = c(0, max(bee_data$bee_abundance, na.rm = TRUE) + 10)) +
-    annotate("text", x = 1.5, y = max(bee_data$bee_abundance, na.rm = TRUE) + 5,
-             label = paste(sig_label_beeab_all),
-             size = 6, vjust = 1, hjust = 0.5)
+# ggplot(bee_data, aes(x = site, y = bee_abundance, fill = site)) +
+#     geom_boxplot(color = "black") +
+#     stat_summary(fun = mean, geom = "point", shape = 21, size = 2,
+#                  fill = "white", color = "black", stroke = 0.8,
+#                  position = position_dodge(width = 0.75)) +
+#     labs(title = "Abondance des abeilles par site",
+#          x = "",
+#          y = "Abondance par placette") +
+#     scale_x_discrete(labels = c("focal" = "Revitalisé", "control" = "Non-Revitalisé")) +
+#     scale_fill_manual(values = c("focal" = "#66c2a5", "control" = "#8c8c8c")) + # Revitalisé = green, Chenalisé = gray
+#     theme_classic() +
+#     theme(axis.text.x = element_text(size = 16, margin = margin(t = 5)),
+#           axis.text.y = element_text(size = 16, margin = margin(r = 5)),
+#           axis.title.y = element_text(size = 21, margin = margin(r = 15)),
+#           axis.title.x = element_text(size = 21),
+#           axis.ticks.length = unit(0.25, "cm"),
+#           plot.margin = margin(t = 20, r = 20, l = 5, b = 5),
+#           plot.title = element_text(size = 21, face = "bold", hjust = 0.5, vjust = 4),
+#           legend.position = "none",
+#           panel.background = element_rect(fill = "white", color = NA),
+#           panel.grid = element_blank()) +
+#     coord_cartesian(ylim = c(0, max(bee_data$bee_abundance, na.rm = TRUE) + 10)) +
+#     annotate("text", x = 1.5, y = max(bee_data$bee_abundance, na.rm = TRUE) + 5,
+#              label = paste(sig_label_beeab_all),
+             # size = 6, vjust = 1, hjust = 0.5)
 
 # 
 # ggsave(
@@ -1263,68 +1202,64 @@ ggplot(bee_data, aes(x = site, y = bee_abundance, fill = site)) +
 
 #and in german
 
-ggsave(
-  filename = "../output/figures/bee_abundance_de.jpg",
-  width = 5333, height = 4105, units = "px", dpi = 800,
-  plot = ggplot(bee_data, aes(x = site, y = bee_abundance, fill = site)) +
-    geom_boxplot(color = "black") +
-    stat_summary(fun = mean, geom = "point", shape = 21, size = 2,
-                 fill = "white", color = "black", stroke = 0.8,
-                 position = position_dodge(width = 0.75)) +
-    labs(title = "Bienenabundanz pro Standort",
-         x = "",
-         y = "Abundanz pro Probefläche") +
-    scale_x_discrete(labels = c("focal" = "Renaturiert", "control" = "Kontrollabschnitt")) +
-    scale_fill_manual(values = c("focal" = "#66c2a5", "control" = "#8c8c8c")) +
-    theme_classic() +
-    theme(axis.text.x = element_text(size = 16, margin = margin(t = 5)),
-          axis.text.y = element_text(size = 16, margin = margin(r = 5)),
-          axis.title.y = element_text(size = 21, margin = margin(r = 15)),
-          axis.title.x = element_text(size = 21),
-          axis.ticks.length = unit(0.25, "cm"),
-          plot.margin = margin(t = 20, r = 20, l = 5, b = 5),
-          plot.title = element_text(size = 21, face = "bold", hjust = 0.5, vjust = 4),
-          legend.position = "none",
-          panel.background = element_rect(fill = "white", color = NA),
-          panel.grid = element_blank()) +
-    coord_cartesian(ylim = c(0, max(bee_data$bee_abundance, na.rm = TRUE) + 10)) +
-    annotate("text", x = 1.5, y = max(bee_data$bee_abundance, na.rm = TRUE) + 5,
-             label = paste(sig_label_beeab_all),
-             size = 6, vjust = 1, hjust = 0.5)
-)
+# ggsave(
+#   filename = "../output/figures/bee_abundance_de.jpg",
+#   width = 5333, height = 4105, units = "px", dpi = 800,
+#   plot = ggplot(bee_data, aes(x = site, y = bee_abundance, fill = site)) +
+#     geom_boxplot(color = "black") +
+#     stat_summary(fun = mean, geom = "point", shape = 21, size = 2,
+#                  fill = "white", color = "black", stroke = 0.8,
+#                  position = position_dodge(width = 0.75)) +
+#     labs(title = "Bienenabundanz pro Standort",
+#          x = "",
+#          y = "Abundanz pro Probefläche") +
+#     scale_x_discrete(labels = c("focal" = "Renaturiert", "control" = "Kontrollabschnitt")) +
+#     scale_fill_manual(values = c("focal" = "#66c2a5", "control" = "#8c8c8c")) +
+#     theme_classic() +
+#     theme(axis.text.x = element_text(size = 16, margin = margin(t = 5)),
+#           axis.text.y = element_text(size = 16, margin = margin(r = 5)),
+#           axis.title.y = element_text(size = 21, margin = margin(r = 15)),
+#           axis.title.x = element_text(size = 21),
+#           axis.ticks.length = unit(0.25, "cm"),
+#           plot.margin = margin(t = 20, r = 20, l = 5, b = 5),
+#           plot.title = element_text(size = 21, face = "bold", hjust = 0.5, vjust = 4),
+#           legend.position = "none",
+#           panel.background = element_rect(fill = "white", color = NA),
+#           panel.grid = element_blank()) +
+#     coord_cartesian(ylim = c(0, max(bee_data$bee_abundance, na.rm = TRUE) + 10)) +
+#     annotate("text", x = 1.5, y = max(bee_data$bee_abundance, na.rm = TRUE) + 5,
+#              label = paste(sig_label_beeab_all),
+#              size = 6, vjust = 1, hjust = 0.5)
+# )
 
-ggsave("../output/figures/bee_richness_de.jpg",
-       width  = 5333, height = 4105, units = "px", dpi = 800,
-       plot = ggplot(bee_data, aes(x = site, y = bee_richness, fill = site)) +
-         geom_boxplot(color = "black") +
-         stat_summary(fun = mean, geom = "point", shape = 21, size = 2,
-                      fill = "white", color = "black", stroke = 0.8,
-                      position = position_dodge(width = 0.75)) +
-         labs(title = "Artenvielfalt der Bienen pro Standort",
-              x = "",
-              y = "Artenvielfalt pro Probefläche") +
-         scale_x_discrete(labels = c("focal" = "Renaturiert", "control" = "Kontrollabschnitt")) +
-         scale_fill_manual(values = c("focal" = "#66c2a5", "control" = "#8c8c8c")) +
-         theme_classic() +
-         theme(axis.text.x = element_text(size = 16, margin = margin(t = 5)),
-               axis.text.y = element_text(size = 16, margin = margin(r = 5)),
-               axis.title.y = element_text(size = 21, margin = margin(r = 15)),
-               axis.title.x = element_text(size = 21),
-               axis.ticks.length = unit(0.25, "cm"),
-               plot.margin = margin(t = 20, r = 20, l = 5, b = 5),
-               plot.title = element_text(size = 21, face = "bold", hjust = 0.5, vjust = 4),
-               legend.position = "none",
-               panel.background = element_rect(fill = "white", color = NA),
-               panel.grid = element_blank()) +
-         coord_cartesian(ylim = c(0, max(bee_data$bee_richness, na.rm = TRUE) + 2)) +
-         annotate("text", x = 1.5, y = max(bee_data$bee_richness, na.rm = TRUE) + 1,
-                  label = paste(sig_label_beeri_all),
-                  size = 6, vjust = 1, hjust = 0.5))
-
-
+# ggsave("../output/figures/bee_richness_de.jpg",
+#        width  = 5333, height = 4105, units = "px", dpi = 800,
+#        plot = ggplot(bee_data, aes(x = site, y = bee_richness, fill = site)) +
+#          geom_boxplot(color = "black") +
+#          stat_summary(fun = mean, geom = "point", shape = 21, size = 2,
+#                       fill = "white", color = "black", stroke = 0.8,
+#                       position = position_dodge(width = 0.75)) +
+#          labs(title = "Artenvielfalt der Bienen pro Standort",
+#               x = "",
+#               y = "Artenvielfalt pro Probefläche") +
+#          scale_x_discrete(labels = c("focal" = "Renaturiert", "control" = "Kontrollabschnitt")) +
+#          scale_fill_manual(values = c("focal" = "#66c2a5", "control" = "#8c8c8c")) +
+#          theme_classic() +
+#          theme(axis.text.x = element_text(size = 16, margin = margin(t = 5)),
+#                axis.text.y = element_text(size = 16, margin = margin(r = 5)),
+#                axis.title.y = element_text(size = 21, margin = margin(r = 15)),
+#                axis.title.x = element_text(size = 21),
+#                axis.ticks.length = unit(0.25, "cm"),
+#                plot.margin = margin(t = 20, r = 20, l = 5, b = 5),
+#                plot.title = element_text(size = 21, face = "bold", hjust = 0.5, vjust = 4),
+#                legend.position = "none",
+#                panel.background = element_rect(fill = "white", color = NA),
+#                panel.grid = element_blank()) +
+#          coord_cartesian(ylim = c(0, max(bee_data$bee_richness, na.rm = TRUE) + 2)) +
+#          annotate("text", x = 1.5, y = max(bee_data$bee_richness, na.rm = TRUE) + 1,
+#                   label = paste(sig_label_beeri_all),
+#                   size = 6, vjust = 1, hjust = 0.5))
 ```
-
-
 
 ```{r bee Red List Wilcoxon & plots}
 # Wilcoxon test across all visits & sites (paired)
@@ -1456,8 +1391,6 @@ plot_rl_rich <- ggplot(rl_plotdata_rich, aes(x = factor(visit), y = value, fill 
             aes(x = factor(visit), y = common_ymax_rlrich - 1, label = sig_label),
             inherit.aes = FALSE, size = 5)
 
-
-
 # RL Abundance per region & visit
 
 wilcox_results_rlabund <- bee_data |>
@@ -1501,14 +1434,10 @@ plot_rl_abund <- ggplot(rl_plotdata_abund, aes(x = factor(visit), y = value, fil
             aes(x = factor(visit), y = common_ymax_rlabund - 1, label = sig_label),
             inherit.aes = FALSE, size = 5)
 
-
-
 # Combine with patchwork
 plot_rl_rich / plot_rl_abund
 
-
 # RL Richness per region & visit
-
 wilcox_results_rlrich <- bee_data |>
   mutate(RLrich_non_threatened = RLrich_total - RLrich_threatened) |>
   group_by(region, visit) |>
@@ -1550,9 +1479,7 @@ plot_rl_rich <- ggplot(rl_plotdata_rich, aes(x = factor(visit), y = value, fill 
             aes(x = factor(visit), y = common_ymax_rlrich - 1, label = sig_label),
             inherit.aes = FALSE, size = 5)
 
-
 # RL Richness: Focal vs Control
-
 rl_rich_fc <- bee_data |>
   select(site, starts_with("RLrich_")) |>
   pivot_longer(cols = starts_with("RLrich_"),
@@ -1568,9 +1495,7 @@ ggplot(rl_rich_fc, aes(x = site, y = value, fill = site)) +
   theme_minimal() +
   scale_fill_manual(values = c("control" = "#1b9e77", "focal" = "#d95f02"))
 
-
 # RL Abundance: Focal vs Control
-
 rl_abund_fc <- bee_data |>
   select(site, starts_with("RLabund_")) |>
   pivot_longer(cols = starts_with("RLabund_"),
@@ -1585,7 +1510,6 @@ ggplot(rl_abund_fc, aes(x = site, y = value, fill = site)) +
        x = "Site Type", y = "Number of Individuals") +
   theme_minimal() +
   scale_fill_manual(values = c("control" = "#1b9e77", "focal" = "#d95f02"))
-
 ```
 
 
@@ -1762,7 +1686,7 @@ N_focal   <- sum(mat_focal)
 n_perm <- 200
 set.seed(123)
 
-# ---- CONTROL ----
+# control
 vec_control <- rep(colnames(mat_control), colSums(mat_control))
 acc_control <- matrix(NA, nrow = n_perm, ncol = N_control)
 
@@ -1771,7 +1695,7 @@ for (p in 1:n_perm) {
   acc_control[p, ] <- cumsum(!duplicated(indiv))
 }
 
-# ---- FOCAL ----
+# focal
 vec_focal <- rep(colnames(mat_focal), colSums(mat_focal))
 acc_focal <- matrix(NA, nrow = n_perm, ncol = N_focal)
 
@@ -1837,7 +1761,6 @@ legend("bottomright",
        col = c(col_control, col_focal),
        lwd = 2.5,
        bty = "n")
-
 ```
 
 ```{r NMDS bee communities by region and site}
@@ -1851,11 +1774,11 @@ regions <- unique(bee_data$region)
 for (r in regions) {
 
   # Subset region
-  dat <- bee_data %>% filter(region == r)
-
+  dat <- bee_data |> filter(region == r)
+  
   # Pool plots within site × visit
-  dat_pool <- dat %>%
-    group_by(site, visit) %>%
+  dat_pool <- dat |>
+    group_by(site, visit) |>
     summarise(across(all_of(names(bee_data)[species_cols]), sum), .groups = "drop")
 
   # Community matrix
@@ -1883,6 +1806,4 @@ for (r in regions) {
          pch = 19,
          bty = "n")
 }
-
 ```
-
