@@ -17,7 +17,6 @@ library(performance)
 library(tidyverse)
 ```
 
-
 # Survey-level data (unpooled across visits)
 ```{r Load data}
 data_all_scaled <- readRDS(file.path("..", "data", "cleaned", "data_all_scaled.rds"))
