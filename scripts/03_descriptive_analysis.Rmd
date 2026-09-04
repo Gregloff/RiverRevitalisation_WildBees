@@ -3,7 +3,7 @@ title: "03_descriptive_analysis"
 output: html_document
 ---
 
-```{r}
+```{r load packages}
 library(dplyr)
 library(ggplot2)
 library(grid)

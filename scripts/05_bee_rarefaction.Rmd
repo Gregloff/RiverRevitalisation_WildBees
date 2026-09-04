@@ -16,7 +16,6 @@ library(glmmTMB)
 library(performance)
 ```
 
-
 ```{r Load data}
 # Compact helper function to read raw CSVs
 bee_data <- read.csv(file.path("..", "data", "cleaned", "bee_data.csv"),

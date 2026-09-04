@@ -10,15 +10,13 @@ library(vegan)
 ```
 
 ```{r load data}
-# Compact helper function to read raw CSVs
+# Read raw CSVs
 read_raw <- function(file) {
   read.csv(file.path("..", "data", "raw", file), stringsAsFactors = FALSE)
 }
 
-# Example usage
 beedata      <- read_raw("beedata.csv")
 mappingdata  <- read_raw("mappingdata.csv")
-canopyhp     <- read_raw("canopyhp.csv")
 ```
 
 Create linkable datasets through plotID and metadata dataframe
@@ -40,19 +38,14 @@ Prepare mapping data (without plants)
 ```{r mapp_data, habplot, habsite prep}
 mapp_data <- mappingdata
 
-# add canopy hp data
-mapp_data <- mapp_data |>
-  left_join(canopyhp |> select(plotID, canopy_hp), by = "plotID")
-
 # Subset the data frame to include plot scale mapping data
 # (not including plant data)
 columns_plot <- c("plotID", "plot", "site", "region", "Xcoord", "Ycoord",
                   "Zcoord", "canton", "date", "visit", "surveyID", "observer",
                   "municipality", "bareground", "vegcover", "vegheight", "herb",
                   "woody", "sand", "gravel", "cobble", "stone", "wood", "soil",
-                  "flat", "sloped", "steep", "canopy", "canopy_hp",
-                  "standingdeadwood", "lyingdeadwood", "branchpile",
-                  "stonepile", "patchiness")
+                  "flat", "sloped", "steep", "canopy", "standingdeadwood",
+                  "lyingdeadwood", "branchpile", "stonepile", "patchiness")
 
 habplot_data <- mapp_data[, columns_plot]
 
@@ -448,10 +441,10 @@ bee_plot <- bee_plot |>
 bee_plot <- bee_plot |>
   mutate(
     bee_hill_q1 = exp(diversity(
-      as.matrix(select(., all_of(species_cols))),
+      as.matrix(pick(all_of(species_cols))),
       index = "shannon")),
     bee_hill_q2 = diversity(
-      as.matrix(select(., all_of(species_cols))),
+      as.matrix(pick(all_of(species_cols))),
       index = "invsimpson")
     )
 ```
@@ -517,7 +510,7 @@ scale_vars <- c("bareground", "vegheight", "herb", "sand",
                 "hill_q0", "hill_q1", "hill_q2")
 
 data_plot_scaled <- data_plot |>
-  mutate(across(all_of(scale_vars), scale))```
+  mutate(across(all_of(scale_vars), scale))
 ```
 
 # Save clean plot-level dataframes

@@ -11,13 +11,9 @@ library(stringr)
 
 Import excel files and compile raw datasets for repository
 ```{r import data, include = FALSE}
-# nolint start: nonportable_path_linter.
 beedata <- read_excel("../../beedata_RRproject_2025.xlsx", skip = 1)
 
 mappingdata <- read_excel("../../mappingdata_RRproject_2025.xlsx", skip = 1)
-
-canopyhp <- read_excel("../../canopydata_RRproject_2025.xlsx", skip = 1)
-# nolint end
 ```
 
 ```{r save raw data}
@@ -27,10 +23,6 @@ write.csv(beedata,
 
 write.csv(mappingdata,
           file.path("..", "data", "raw", "mappingdata.csv"),
-          row.names = FALSE)
-
-write.csv(canopyhp,
-          file.path("..", "data", "raw", "canopyhp.csv"),
           row.names = FALSE)
 ```
 

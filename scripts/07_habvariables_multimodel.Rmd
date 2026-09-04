@@ -128,7 +128,6 @@ corrplot(
 # flat - sloped -> sloped
 # hill_q0  hill_q1  hill_q2 -> hill_q0
 
-# canopy_hp excluded as constant across visits
 env_vars <- c("bareground", "vegheight", "herb", "sand", "gravel", "cobble",
               "stone", "wood", "soil", "sloped", "steep", "canopy",
               "branchpile", "stonepile", "standingdeadwood", "lyingdeadwood",
@@ -160,8 +159,8 @@ dev.off()
 # List of numeric environmental variables
 env_vars <- c("visit", "bareground", "vegcover", "vegheight", "herb", "woody",
               "sand", "gravel", "cobble", "stone", "wood", "soil", "flat",
-              "sloped", "steep", "canopy", "canopy_hp", "branchpile",
-              "stonepile", "patchiness", "standingdeadwood", "lyingdeadwood",
+              "sloped", "steep", "canopy", "branchpile", "stonepile",
+              "patchiness", "standingdeadwood", "lyingdeadwood",
               "hill_q0", "hill_q1", "hill_q2")
 #visit and patchiness, although included in coming models as ordinal, are treated as numeric for Spearman computation
 
@@ -203,7 +202,6 @@ corrplot(
 # flat - sloped -> sloped
 # hill_q0  hill_q1  hill_q2 -> hill_q0
 
-# canopy_hp excluded as constant across visits
 env_vars <- c("bareground", "vegheight", "herb", "sand", "gravel", "cobble",
               "stone", "wood", "soil", "sloped", "steep", "canopy",
               "branchpile", "stonepile", "standingdeadwood", "lyingdeadwood",
@@ -214,7 +212,7 @@ Can we include site as explanatory variable in a multivariate model? - No, this 
 ```{r bee ab model prep: diagnostic site vs habitat covariates}
 num_vars <- c("visit", "bareground", "vegcover", "vegheight", "herb", "woody",
               "sand", "gravel", "cobble", "stone", "wood", "soil", "flat",
-              "sloped", "steep", "canopy", "canopy_hp", "branchpile",
+              "sloped", "steep", "canopy", "branchpile",
               "stonepile", "patchiness", "standingdeadwood", "lyingdeadwood",
               "hill_q0")
 
