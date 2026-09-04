@@ -1,5 +1,5 @@
 ---
-title: "05_site_unimodel"
+title: "06_site_unimodel"
 author: Gregory B. Egloff
 ---
 
@@ -504,7 +504,7 @@ gt_table_univsite <- table_univsite %>%
     p_value = "P-value"
   )
 
-gtsave(gt_table_univsite, filename = "../output/tables/site_univ_effects.docx")
+gtsave(gt_table_univsite, filename = "..", "output", "tables", "site_univ_effects.docx")
 ```
 
 ```{r save univsite model output table}
@@ -518,7 +518,7 @@ gt_table_univsite <- table_univsite %>%
     p_value = "P-value"
   )
 
-gtsave(gt_table_univsite, filename = "../output/tables/Table_E1.docx")
+gtsave(gt_table_univsite, filename = "..", "output", "tables", "Table_E1.docx")
 ```
 
 
@@ -879,7 +879,7 @@ gt_table_sitevisit
 # Export
 gtsave(
   gt_table_sitevisit,
-  filename = "../output/tables/sitevisit_effects.docx"
+  filename = "..", "output", "tables", "sitevisit_effects.docx"
 )
 ```
 
@@ -887,7 +887,7 @@ gtsave(
 # Export
 gtsave(
   gt_table_sitevisit,
-  filename = "../output/tables/Table_H1.docx"
+  filename = "..", "output", "tables", "Table_H1.docx"
 )
 ```
 
@@ -1190,14 +1190,14 @@ gt_table_cov
 ```{r export table}
 gtsave(
   gt_table_cov,
-  filename = "../output/tables/cov_rarefaction_effects.docx"
+  filename = "..", "output", "tables", "cov_rarefaction_effects.docx"
 )
 ```
 
 ```{r export table}
 gtsave(
   gt_table_cov,
-  filename = "../output/tables/Table_1.docx"
+  filename = "..", "output", "tables", "Table_1.docx"
 )
 ```
 
@@ -1541,14 +1541,14 @@ gt_table_size
 ```{r export table}
 gtsave(
   gt_table_size,
-  filename = "../output/tables/size_rarefaction_effects.docx"
+  filename = "..", "output", "tables", "size_rarefaction_effects.docx"
 )
 ```
 
 ```{r export table}
 gtsave(
   gt_table_size,
-  filename = "../output/tables/Table_D1.docx"
+  filename = "..", "output", "tables", "Table_D1.docx"
 )
 ```
 

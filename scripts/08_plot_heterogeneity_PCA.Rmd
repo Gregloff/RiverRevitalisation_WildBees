@@ -1,5 +1,5 @@
 ---
-title: "08_plot_heterogeneity"
+title: "08_plot_heterogeneity_PCA"
 output: html_document
 ---
 ```{r load packages}
@@ -140,23 +140,8 @@ p_envfit <- p_biplot +
 
 p_envfit
 ```
-Nearly 47% of the variation in patchiness is explained by the position of plots in PCA space (PC1–PC2).
-In ecological multivariate analyses, this is a strong effect size, especially for a passive variable not used to build the PCA.
-
-Low patchiness plots (red, class 0) cluster:
-At high PC1
-Often low PC2
-Associated with dense herb cover and soil continuity
-
-High patchiness plots (dark blue, class 3) cluster:
-At negative PC1
-At positive PC2
-Aligned with sand, floral richness, woody elements, bare ground
-
-Patchiness is strongly and significantly aligned with the main multivariate habitat gradients, increasing toward plots characterized by higher structural complexity, floral richness, and substrate heterogeneity, and decreasing in homogeneous, herb‑dominated habitats.
-gpt
-
-```{r print PCA}
+Export figure
+```{r export figure}
 
 tiff(
   file.path("..", "output", "figures", "pca_envfit_600dpi.tiff"),
