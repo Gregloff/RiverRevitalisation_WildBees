@@ -13,7 +13,7 @@ library(ggplot2)
 
 ```{r load layers}
 habitat <- rast("../data/raw/habitatmap_v1_1_20241025.tif")
-
+# https://www.doi.org/10.16904/envidat.515.
 
 layers <- st_layers("../data/raw/merged_sites.gpkg")$name
 
@@ -40,6 +40,8 @@ sites <- do.call(
 )
 ```
 
+If working from raw data, first generate buffer datasets and save to clean folder
+
 # 500m buffer
 ```{r buffer habiat map}
 # sites_vect <- terra::vect(sites)
@@ -64,7 +66,7 @@ hab_mask <- readRDS("../data/cleaned/hab_mask_500m.rds")
 ```
 
 
-```{r whch habitat types occur}
+```{r identify habitat types}
 vals <- terra::extract(hab_mask, buffer500)
 
 sort(table(vals$habitatmap_v1_1_20241025),
@@ -98,7 +100,6 @@ vals <- vals %>%
 
 buffer500$site_name <- sites$site_name
 vals$site_name <- buffer500$site_name[vals$ID]
-
 
 props <- vals %>%
   count(site_name, habitat_group) %>%

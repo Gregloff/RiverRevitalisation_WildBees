@@ -108,12 +108,11 @@ gt_species <- species_table %>%
   )
 
 gt_species
+```
 
-gtsave(
-  gt_species,
-  filename = "../output/tables/bee_species_list.docx"
-)
-
+Export table
+```{r export table}
+gtsave(gt_species, file.path("..", "output", "tables", "bee_species_list.docx"))
 ```
 
 
